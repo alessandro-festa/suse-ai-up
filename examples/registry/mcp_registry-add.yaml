@@ -20,3 +20,4 @@
     commit: 
     project: https://github.com/alessandro-festa/simplemcp  # Required for python and go types
     release:      # Optional for go type (enables pre-built binary downloads)
+    tag: v0.0.1
