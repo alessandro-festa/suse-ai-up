@@ -1,0 +1,43 @@
+apiVersion: mcp.suse.com/v1alpha1
+kind: MCPRegistry
+metadata:
+  name: official
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  priority: 100
+  refreshInterval: 5m
+  source:
+    url: https://raw.githubusercontent.com/SUSE/suse-ai-up/main/hack/registry/mcp_registry.yaml
+---
+apiVersion: mcp.suse.com/v1alpha1
+kind: MCPRegistry
+metadata:
+  name: site-local
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  priority: 200
+  source:
+    inline:
+      - displayName: hello-world
+        description: Tiny inline MCP server used for smoke tests.
+        version: "0.1.0"
+        image: ghcr.io/example/hello-mcp:0.1.0
+        port: 8000
+        categories:
+          - examples
+        tags:
+          - smoke
+        packages:
+          - registryType: oci
+            identifier: ghcr.io/example/hello-mcp:0.1.0
+            transport:
+              type: stdio
+            environmentVariables:
+              - name: GREETING
+                description: Greeting phrase used by the server.
+                format: string
+                default: hello
