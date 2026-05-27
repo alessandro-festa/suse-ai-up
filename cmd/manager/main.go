@@ -38,6 +38,7 @@ import (
 	mcpv1alpha1 "github.com/SUSE/suse-ai-up/api/v1alpha1"
 	"github.com/SUSE/suse-ai-up/internal/controllers"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/services/agents"
 	"github.com/SUSE/suse-ai-up/pkg/services/auth"
 	"github.com/SUSE/suse-ai-up/pkg/services/virtualmcp"
 	// +kubebuilder:scaffold:imports
@@ -192,6 +193,23 @@ func main() {
 		Provider: capabilityProvider,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to set up controller", "controller", "VirtualMCPRoute")
+		os.Exit(1)
+	}
+
+	// In-process Agent registry the §2.4 HTTP shim will share for
+	// request-time agent lookup. agents.DefaultRegistry holds the
+	// AgentProtocol implementations (smartagents today) the reconciler
+	// validates Spec.Protocol against.
+	agentStore := agents.NewInMemoryAgentStore()
+
+	if err = (&controllers.AgentReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		WorkloadNamespace: workloadNamespace,
+		Store:             agentStore,
+		Protocols:         agents.DefaultRegistry,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to set up controller", "controller", "Agent")
 		os.Exit(1)
 	}
 
