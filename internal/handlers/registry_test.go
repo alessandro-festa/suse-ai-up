@@ -387,15 +387,15 @@ func TestUploadBulkRegistryEntries_FillsMissingIDs(t *testing.T) {
 
 func TestIsValidMCPFile(t *testing.T) {
 	cases := map[string]bool{
-		"script.py":         true,
-		"requirements.txt":  true,
-		"README.md":         true,
-		"config.json":       true,
-		"malware.exe":       false,
-		"image.png":         false,
-		"":                  false,
-		"script.PY":         false, // case-sensitive by current impl
-		"noextension":       false,
+		"script.py":        true,
+		"requirements.txt": true,
+		"README.md":        true,
+		"config.json":      true,
+		"malware.exe":      false,
+		"image.png":        false,
+		"":                 false,
+		"script.PY":        false, // case-sensitive by current impl
+		"noextension":      false,
 	}
 	for name, want := range cases {
 		if got := isValidMCPFile(name); got != want {

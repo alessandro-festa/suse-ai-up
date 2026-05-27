@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
 	"github.com/SUSE/suse-ai-up/pkg/models"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // UserStore defines the interface for user storage

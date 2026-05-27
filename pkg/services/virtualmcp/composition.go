@@ -27,5 +27,5 @@ func NewNoopRouteRegistry() RouteRegistry { return noopRouteRegistry{} }
 
 type noopRouteRegistry struct{}
 
-func (noopRouteRegistry) ListRoutes() []models.MCPServer            { return nil }
+func (noopRouteRegistry) ListRoutes() []models.MCPServer               { return nil }
 func (noopRouteRegistry) GetRoute(id string) (*models.MCPServer, bool) { return nil, false }

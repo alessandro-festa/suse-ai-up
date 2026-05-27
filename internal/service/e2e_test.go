@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SUSE/suse-ai-up/pkg/session"
+	"github.com/gin-gonic/gin"
 )
 
 // MockOAuthServer simulates an OAuth authorization server

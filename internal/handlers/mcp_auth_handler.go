@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SUSE/suse-ai-up/internal/service"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
 	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/gin-gonic/gin"
 )
 
 // MCPAuthHandler handles MCP authentication endpoints

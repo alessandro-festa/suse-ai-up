@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // AuthMode represents the authentication mode for an adapter

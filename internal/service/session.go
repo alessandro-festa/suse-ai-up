@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
 	"github.com/SUSE/suse-ai-up/pkg/session"
+	"github.com/gin-gonic/gin"
 )
 
 // SessionManagementService handles session management operations

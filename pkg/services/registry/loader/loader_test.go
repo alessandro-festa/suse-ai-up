@@ -14,10 +14,10 @@ import (
 )
 
 type fakeManager struct {
-	uploaded   []*models.MCPServer
-	cleared    int
-	uploadErr  error
-	clearErr   error
+	uploaded  []*models.MCPServer
+	cleared   int
+	uploadErr error
+	clearErr  error
 }
 
 func (f *fakeManager) UploadRegistryEntries(entries []*models.MCPServer) error {

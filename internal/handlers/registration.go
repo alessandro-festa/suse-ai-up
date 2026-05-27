@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SUSE/suse-ai-up/internal/config"
 	"github.com/SUSE/suse-ai-up/pkg/auth"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
@@ -17,6 +16,7 @@ import (
 	"github.com/SUSE/suse-ai-up/pkg/models"
 	"github.com/SUSE/suse-ai-up/pkg/scanner"
 	"github.com/SUSE/suse-ai-up/pkg/services/virtualmcp"
+	"github.com/gin-gonic/gin"
 )
 
 // RegistrationHandler handles registration of discovered MCP servers as adapters

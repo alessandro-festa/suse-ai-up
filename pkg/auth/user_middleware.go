@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
-	"github.com/SUSE/suse-ai-up/pkg/clients"
-	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // UserAuthService handles user authentication

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SUSE/suse-ai-up/pkg/auth"
 	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/gin-gonic/gin"
 )
 
 // AuthHandler handles authentication endpoints

@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
+	"github.com/SUSE/suse-ai-up/pkg/services/registry"
 	"os"
 	"strconv"
-	"github.com/SUSE/suse-ai-up/pkg/services/registry"
 )
 
 func main() {

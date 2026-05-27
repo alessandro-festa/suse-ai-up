@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	corev1 "k8s.io/api/core/v1"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
 	"github.com/SUSE/suse-ai-up/pkg/models"
 	"github.com/SUSE/suse-ai-up/pkg/proxy"
 	"github.com/SUSE/suse-ai-up/pkg/session"
+	"github.com/gin-gonic/gin"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // ProxyHandler handles proxying requests

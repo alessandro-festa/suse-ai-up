@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gin-gonic/gin"
 	"github.com/SUSE/suse-ai-up/pkg/plugins"
+	"github.com/gin-gonic/gin"
 )
 
 // RouteManager handles dynamic route registration for plugin services

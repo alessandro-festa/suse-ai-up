@@ -3,8 +3,8 @@ package plugins
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/SUSE/suse-ai-up/internal/config"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestServiceManager(t *testing.T) {
