@@ -37,6 +37,7 @@ import (
 
 	mcpv1alpha1 "github.com/SUSE/suse-ai-up/api/v1alpha1"
 	"github.com/SUSE/suse-ai-up/internal/controllers"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -151,6 +152,27 @@ func main() {
 		WorkloadNamespace: workloadNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to set up controller", "controller", "Adapter")
+		os.Exit(1)
+	}
+
+	// In-process MCP server cache. Today only the operator binary uses it;
+	// §2.4 (HTTP shim rewire) will share this same instance with the legacy
+	// data plane so the controller and the HTTP path see the same servers.
+	mcpServerStore := clients.NewInMemoryMCPServerStore()
+
+	if err = (&controllers.MCPRegistryReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to set up controller", "controller", "MCPRegistry")
+		os.Exit(1)
+	}
+	if err = (&controllers.MCPServerReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Store:  mcpServerStore,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to set up controller", "controller", "MCPServer")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
