@@ -4,4 +4,5 @@ resources:
 - mcp_v1alpha1_mcpregistry.yaml
 - mcp_v1alpha1_mcpserver.yaml
 - mcp_v1alpha1_virtualmcproute.yaml
+- mcp_v1alpha1_agent.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

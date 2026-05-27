@@ -1,0 +1,43 @@
+apiVersion: mcp.suse.com/v1alpha1
+kind: Agent
+metadata:
+  name: ops-agent
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  protocol: a2a
+  description: |
+    In-process A2A agent that exposes the ops-toolkit VirtualMCPRoute to
+    other agents via the agent-to-agent protocol. No external runtime; the
+    proxy translates A2A calls into MCP tool invocations.
+  tools:
+    - virtualMCPRouteRef:
+        name: ops-toolkit
+    - adapterRef:
+        name: uyuni-sample
+---
+apiVersion: mcp.suse.com/v1alpha1
+kind: Agent
+metadata:
+  name: smartagents-runtime
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  protocol: smartagents
+  description: External smartagents runtime fronted by the proxy.
+  runtime:
+    image: ghcr.io/example/smartagents:0.1.0
+    port: 9090
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  tools:
+    - virtualMCPRouteRef:
+        name: ops-toolkit
