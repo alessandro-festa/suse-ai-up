@@ -546,7 +546,7 @@ func (s *Service) proxyToPlugins(w http.ResponseWriter, r *http.Request) {
 
 // loadRegistryServers loads MCP servers from the config file
 func (s *Service) loadRegistryServers() []map[string]interface{} {
-	registryFile := "config/mcp_registry.yaml"
+	registryFile := "hack/registry/mcp_registry.yaml"
 	data, err := os.ReadFile(registryFile)
 	if err != nil {
 		logging.ProxyLogger.Error("Could not read registry file %s: %v", registryFile, err)

@@ -27,15 +27,12 @@ RUN useradd -r -s /bin/bash -u 1000 mcpuser
 
 WORKDIR /home/mcpuser/
 
-# Copy binary, config, and docs
+# Copy binary, registry data, and docs
 COPY --from=builder /app/suse-ai-up .
-COPY --from=builder /app/config ./config
+COPY --from=builder /app/hack/registry ./hack/registry
 COPY --from=builder /app/docs ./docs
 
-# Clean up and set permissions
-RUN rm -f config/comprehensive_mcp_servers.yaml*
-
-RUN chown -R mcpuser:mcpuser suse-ai-up config
+RUN chown -R mcpuser:mcpuser suse-ai-up hack docs
 
 # Switch to non-root user
 USER 1000
