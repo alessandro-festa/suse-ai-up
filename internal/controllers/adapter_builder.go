@@ -1,0 +1,197 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controllers
+
+import (
+	"errors"
+	"fmt"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+
+	mcpv1alpha1 "github.com/SUSE/suse-ai-up/api/v1alpha1"
+)
+
+// ErrUnsupportedCommandType is returned by BuildDeployment when the adapter
+// declares a sidecar CommandType the builder does not yet know how to render.
+// Only "docker" is supported in this iteration; npx/python/pip will follow
+// in a separate PR once their fixtures and CRD shape are settled.
+var ErrUnsupportedCommandType = errors.New("adapter sidecar commandType not supported by builder")
+
+// ErrMissingSidecarConfig is returned when the adapter's ConnectionType
+// implies a sidecar workload but Spec.Source.SidecarConfig is nil.
+var ErrMissingSidecarConfig = errors.New("adapter requires a sidecar but Spec.Source.SidecarConfig is nil")
+
+const (
+	// defaultSidecarPort matches the legacy default in
+	// pkg/proxy/sidecar_manager.go so existing adapter examples keep working
+	// after migration to the CRD path.
+	defaultSidecarPort int32 = 3000
+
+	// commonNameLabel / managedComponent are the standard
+	// app.kubernetes.io/* labels applied to every Deployment+Service the
+	// reconciler owns.
+	commonNameLabel  = "suse-ai-up"
+	managedComponent = "adapter-sidecar"
+
+	// adapterLabelKey carries the owning Adapter CR name and is the primary
+	// selector label so Deployment <-> Service stay paired even if other
+	// labels shift over time.
+	adapterLabelKey = "mcp.suse.com/adapter"
+)
+
+// connectionTypeNeedsSidecar reports whether the proxy must materialize a
+// Deployment+Service for the given connection type. Remote / pure-HTTP
+// connections are handled by the proxy talking directly to the upstream,
+// so no workload is owned by the reconciler.
+func connectionTypeNeedsSidecar(ct mcpv1alpha1.ConnectionType) bool {
+	switch ct {
+	case mcpv1alpha1.ConnectionTypeLocalStdio,
+		mcpv1alpha1.ConnectionTypeSidecarStdio,
+		mcpv1alpha1.ConnectionTypeStreamableHTTP:
+		return true
+	default:
+		return false
+	}
+}
+
+// sidecarObjectName is the deterministic name shared by the Deployment and
+// the Service backing an Adapter. Prefixing keeps the workload-namespace
+// flat-listable and prevents accidental collisions with unrelated objects.
+func sidecarObjectName(adapter *mcpv1alpha1.Adapter) string {
+	return "adapter-" + adapter.Name
+}
+
+// sidecarLabels returns the label set applied to both the Deployment's pod
+// template and the Service selector. The adapter-name label is what binds
+// the two together; the rest are informational.
+func sidecarLabels(adapter *mcpv1alpha1.Adapter) map[string]string {
+	return map[string]string{
+		"app.kubernetes.io/name":      commonNameLabel,
+		"app.kubernetes.io/component": managedComponent,
+		adapterLabelKey:               adapter.Name,
+	}
+}
+
+// sidecarSelector is the subset of labels used as the pod selector. Pod
+// selectors are immutable, so keep this minimal and stable across releases.
+func sidecarSelector(adapter *mcpv1alpha1.Adapter) map[string]string {
+	return map[string]string{
+		"app.kubernetes.io/component": managedComponent,
+		adapterLabelKey:               adapter.Name,
+	}
+}
+
+// BuildDeployment renders the *appsv1.Deployment for an Adapter whose
+// ConnectionType requires a sidecar. The function is pure — no client, no
+// I/O — so it is exhaustively unit-testable. Caller is responsible for
+// setting OwnerReferences and applying the object.
+func BuildDeployment(adapter *mcpv1alpha1.Adapter, workloadNamespace string) (*appsv1.Deployment, error) {
+	if adapter.Spec.Source.SidecarConfig == nil {
+		return nil, ErrMissingSidecarConfig
+	}
+	cfg := adapter.Spec.Source.SidecarConfig
+
+	if cfg.CommandType != "docker" {
+		return nil, fmt.Errorf("%w: %q", ErrUnsupportedCommandType, cfg.CommandType)
+	}
+	if cfg.Image == "" {
+		return nil, fmt.Errorf("docker sidecar requires Spec.Source.SidecarConfig.Image")
+	}
+
+	port := cfg.Port
+	if port == 0 {
+		port = defaultSidecarPort
+	}
+
+	var replicas int32 = 1
+	if adapter.Spec.Replicas != nil {
+		replicas = *adapter.Spec.Replicas
+	}
+
+	labels := sidecarLabels(adapter)
+	selector := sidecarSelector(adapter)
+
+	container := corev1.Container{
+		Name:  "sidecar",
+		Image: cfg.Image,
+		Ports: []corev1.ContainerPort{{
+			Name:          "mcp",
+			ContainerPort: port,
+			Protocol:      corev1.ProtocolTCP,
+		}},
+		Env: cfg.Env,
+	}
+	if cfg.Command != "" {
+		container.Command = []string{cfg.Command}
+	}
+	if len(cfg.Args) > 0 {
+		container.Args = cfg.Args
+	}
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      sidecarObjectName(adapter),
+			Namespace: workloadNamespace,
+			Labels:    labels,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: selector},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{container},
+				},
+			},
+		},
+	}, nil
+}
+
+// BuildService renders the *corev1.Service exposing the Deployment built by
+// BuildDeployment. Targets the same name + selector so the two are bound by
+// label match, not by Service.Spec.Selector alone.
+func BuildService(adapter *mcpv1alpha1.Adapter, workloadNamespace string) (*corev1.Service, error) {
+	if adapter.Spec.Source.SidecarConfig == nil {
+		return nil, ErrMissingSidecarConfig
+	}
+	cfg := adapter.Spec.Source.SidecarConfig
+
+	port := cfg.Port
+	if port == 0 {
+		port = defaultSidecarPort
+	}
+
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      sidecarObjectName(adapter),
+			Namespace: workloadNamespace,
+			Labels:    sidecarLabels(adapter),
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: sidecarSelector(adapter),
+			Ports: []corev1.ServicePort{{
+				Name:       "mcp",
+				Port:       port,
+				TargetPort: intstr.FromInt32(port),
+				Protocol:   corev1.ProtocolTCP,
+			}},
+			Type: corev1.ServiceTypeClusterIP,
+		},
+	}, nil
+}

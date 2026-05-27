@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	mcpv1alpha1 "github.com/SUSE/suse-ai-up/api/v1alpha1"
+	"github.com/SUSE/suse-ai-up/internal/controllers"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -68,6 +69,9 @@ func main() {
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	var workloadNamespace string
+	flag.StringVar(&workloadNamespace, "workload-namespace", "suse-ai-up-mcp",
+		"Namespace where adapter Deployments/Services are created.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -141,6 +145,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controllers.AdapterReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		WorkloadNamespace: workloadNamespace,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to set up controller", "controller", "Adapter")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
