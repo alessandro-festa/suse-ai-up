@@ -1,0 +1,25 @@
+apiVersion: mcp.suse.com/v1alpha1
+kind: VirtualMCPRoute
+metadata:
+  name: ops-toolkit
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  exposedAs: ops-toolkit
+  description: Composite route bundling Uyuni systems-management tools and a read-only metrics adapter.
+  sources:
+    - adapterRef:
+        name: uyuni-sample
+      tools:
+        prefix: list_
+      rewrite:
+        prefix: uyuni_
+    - mcpServerRef:
+        name: uyuni
+      tools:
+        names:
+          - get_systems
+          - get_channels
+      rewrite:
+        prefix: uyuni_

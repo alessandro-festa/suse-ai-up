@@ -32,4 +32,12 @@ resources:
   kind: MCPServer
   path: github.com/SUSE/suse-ai-up/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: suse.com
+  group: mcp
+  kind: VirtualMCPRoute
+  path: github.com/SUSE/suse-ai-up/api/v1alpha1
+  version: v1alpha1
 version: "3"
