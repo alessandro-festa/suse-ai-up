@@ -8,6 +8,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - secrets
   verbs:
   - get
   - list
@@ -47,7 +48,10 @@ rules:
   - mcp.suse.com
   resources:
   - adapters
+  - groups
   - mcpregistries
+  - routeassignments
+  - users
   verbs:
   - get
   - list
@@ -58,20 +62,35 @@ rules:
   - mcp.suse.com
   resources:
   - adapters/finalizers
+  - groups/finalizers
   - mcpregistries/finalizers
   - mcpservers/finalizers
+  - routeassignments/finalizers
+  - users/finalizers
   verbs:
   - update
 - apiGroups:
   - mcp.suse.com
   resources:
   - adapters/status
+  - groups/status
   - mcpregistries/status
   - mcpservers/status
+  - routeassignments/status
+  - users/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - mcp.suse.com
+  resources:
+  - agents
+  - virtualmcproutes
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - mcp.suse.com
   resources:
