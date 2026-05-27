@@ -1,0 +1,34 @@
+apiVersion: mcp.suse.com/v1alpha1
+kind: MCPServer
+metadata:
+  name: uyuni
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  displayName: Uyuni MCP
+  description: MCP server for the Uyuni systems management platform.
+  version: "1.0.0"
+  image: registry.opensuse.org/uyuni/mcp/server:latest
+  port: 8000
+  repository:
+    url: https://github.com/uyuni-project/uyuni-mcp
+    source: github
+  categories:
+    - systems-management
+  tags:
+    - suse
+    - uyuni
+  packages:
+    - registryType: oci
+      identifier: registry.opensuse.org/uyuni/mcp/server:latest
+      transport:
+        type: stdio
+      environmentVariables:
+        - name: UYUNI_URL
+          description: Uyuni server base URL.
+          format: string
+        - name: UYUNI_TOKEN
+          description: API token for Uyuni.
+          format: string
+          isSecret: true
