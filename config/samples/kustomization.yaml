@@ -1,4 +1,4 @@
 ## Append samples of your project ##
 resources:
-- mcp_v1alpha1_placeholder.yaml
+- mcp_v1alpha1_adapter.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

@@ -1,0 +1,29 @@
+apiVersion: mcp.suse.com/v1alpha1
+kind: Adapter
+metadata:
+  name: uyuni-sample
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  connectionType: SidecarStdio
+  description: Example Adapter wrapping the Uyuni MCP server as a stdio sidecar.
+  replicas: 1
+  source:
+    sidecarConfig:
+      commandType: docker
+      command: docker
+      args:
+        - run
+        - -i
+        - --rm
+        - registry.opensuse.org/uyuni/mcp/server:latest
+      port: 8000
+      source: sample
+  variables:
+    region: us-east-1
+  authentication:
+    required: true
+    type: bearer
+    bearerToken:
+      dynamic: true
