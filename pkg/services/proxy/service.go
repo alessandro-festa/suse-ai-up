@@ -9,16 +9,16 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"fmt"
+	"github.com/SUSE/suse-ai-up/pkg/logging"
+	"github.com/SUSE/suse-ai-up/pkg/middleware"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/proxy"
 	"io"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"strings"
-	"suse-ai-up/pkg/logging"
-	"suse-ai-up/pkg/middleware"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/proxy"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -546,7 +546,7 @@ func (s *Service) proxyToPlugins(w http.ResponseWriter, r *http.Request) {
 
 // loadRegistryServers loads MCP servers from the config file
 func (s *Service) loadRegistryServers() []map[string]interface{} {
-	registryFile := "config/mcp_registry.yaml"
+	registryFile := "hack/registry/mcp_registry.yaml"
 	data, err := os.ReadFile(registryFile)
 	if err != nil {
 		logging.ProxyLogger.Error("Could not read registry file %s: %v", registryFile, err)

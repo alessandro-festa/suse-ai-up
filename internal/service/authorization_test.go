@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SUSE/suse-ai-up/pkg/session"
 	"github.com/gin-gonic/gin"
-	"suse-ai-up/pkg/session"
 )
 
 // MockSessionStore implements session.SessionStore for testing

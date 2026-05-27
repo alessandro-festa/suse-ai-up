@@ -9,15 +9,15 @@ import (
 	"path/filepath"
 	"testing"
 
-	"suse-ai-up/internal/config"
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/internal/config"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 type fakeManager struct {
-	uploaded   []*models.MCPServer
-	cleared    int
-	uploadErr  error
-	clearErr   error
+	uploaded  []*models.MCPServer
+	cleared   int
+	uploadErr error
+	clearErr  error
 }
 
 func (f *fakeManager) UploadRegistryEntries(entries []*models.MCPServer) error {

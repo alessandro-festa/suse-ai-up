@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/session"
+	"github.com/SUSE/suse-ai-up/pkg/session"
 )
 
 // ErrorType represents different types of MCP errors

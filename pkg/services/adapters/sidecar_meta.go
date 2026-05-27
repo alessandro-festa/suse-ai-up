@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // getSidecarConfig extracts the complete sidecar configuration from server metadata

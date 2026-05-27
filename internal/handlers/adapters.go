@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/services"
-	adaptersvc "suse-ai-up/pkg/services/adapters"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/services"
+	adaptersvc "github.com/SUSE/suse-ai-up/pkg/services/adapters"
 )
 
 // ErrorResponse represents an error response

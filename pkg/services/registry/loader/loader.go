@@ -11,13 +11,13 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"suse-ai-up/internal/config"
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/internal/config"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // DefaultRegistryFile is the on-disk fallback used when no registry URL is configured
 // or when the URL fetch fails.
-const DefaultRegistryFile = "config/mcp_registry.yaml"
+const DefaultRegistryFile = "hack/registry/mcp_registry.yaml"
 
 const defaultRegistryTimeout = 30 * time.Second
 

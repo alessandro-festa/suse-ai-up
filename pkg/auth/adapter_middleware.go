@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/SUSE/suse-ai-up/pkg/clients"
 	"github.com/gin-gonic/gin"
-	"suse-ai-up/pkg/clients"
 )
 
 // AdapterAuthMiddleware provides authentication for adapter endpoints

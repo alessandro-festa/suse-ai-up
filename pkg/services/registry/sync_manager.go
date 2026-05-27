@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // SyncManager handles synchronization with external MCP registries

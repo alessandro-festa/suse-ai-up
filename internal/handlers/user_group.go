@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	"suse-ai-up/pkg/services"
+	"github.com/SUSE/suse-ai-up/pkg/services"
 )
 
 // UserGroupHandler handles user and group management requests

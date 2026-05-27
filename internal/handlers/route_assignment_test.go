@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/services"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/services"
 )
 
 // fakeRouteRegistry is a minimal RegistryStore for tests. It only needs Get/Update.

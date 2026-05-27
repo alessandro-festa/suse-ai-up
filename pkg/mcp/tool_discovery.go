@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // MCPToolDiscoveryService handles discovery of tools from MCP servers

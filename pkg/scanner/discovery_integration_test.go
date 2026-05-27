@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 func TestDiscoveryIntegration(t *testing.T) {

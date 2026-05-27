@@ -4,9 +4,9 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/SUSE/suse-ai-up/pkg/plugins"
+	"github.com/SUSE/suse-ai-up/pkg/services/agents"
 	"github.com/gin-gonic/gin"
-	"suse-ai-up/pkg/plugins"
-	"suse-ai-up/pkg/services/agents"
 )
 
 // PluginRegistrationService handles plugin service registration

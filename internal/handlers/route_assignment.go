@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/services"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/services"
 )
 
 // RegistryStore defines the interface for registry operations needed by route assignments

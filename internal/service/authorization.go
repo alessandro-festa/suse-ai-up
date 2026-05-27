@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SUSE/suse-ai-up/pkg/session"
 	"github.com/gin-gonic/gin"
-	"suse-ai-up/pkg/session"
 )
 
 // OAuthClient holds OAuth client information

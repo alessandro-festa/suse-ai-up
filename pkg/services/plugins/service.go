@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"suse-ai-up/internal/handlers"
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/plugins"
+	"github.com/SUSE/suse-ai-up/internal/handlers"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/plugins"
 )
 
 // Service represents the plugins service

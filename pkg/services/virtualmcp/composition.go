@@ -1,6 +1,6 @@
 package virtualmcp
 
-import "suse-ai-up/pkg/models"
+import "github.com/SUSE/suse-ai-up/pkg/models"
 
 // RouteRegistry exposes virtual-MCP route composition: assembling a single
 // virtual MCP server view from multiple registered adapters/backends.
@@ -27,5 +27,5 @@ func NewNoopRouteRegistry() RouteRegistry { return noopRouteRegistry{} }
 
 type noopRouteRegistry struct{}
 
-func (noopRouteRegistry) ListRoutes() []models.MCPServer            { return nil }
+func (noopRouteRegistry) ListRoutes() []models.MCPServer               { return nil }
 func (noopRouteRegistry) GetRoute(id string) (*models.MCPServer, bool) { return nil, false }

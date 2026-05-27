@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"fmt"
+	"github.com/SUSE/suse-ai-up/pkg/proxy"
 	"strings"
-	"suse-ai-up/pkg/proxy"
 )
 
 // AuthMiddleware provides bearer token authentication

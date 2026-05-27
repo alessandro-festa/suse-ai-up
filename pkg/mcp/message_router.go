@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/session"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/session"
 )
 
 // MessageRouter handles routing of MCP messages to appropriate handlers

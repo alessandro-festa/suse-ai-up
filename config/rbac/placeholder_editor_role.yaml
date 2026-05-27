@@ -1,0 +1,27 @@
+# permissions for end users to edit placeholders.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+  name: placeholder-editor-role
+rules:
+- apiGroups:
+  - mcp.suse.com
+  resources:
+  - placeholders
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - mcp.suse.com
+  resources:
+  - placeholders/status
+  verbs:
+  - get

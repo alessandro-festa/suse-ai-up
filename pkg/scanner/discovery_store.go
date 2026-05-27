@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // InMemoryDiscoveryStore implements DiscoveryStore with in-memory storage

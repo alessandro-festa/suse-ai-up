@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // MCPServerStore interface for MCP server storage operations

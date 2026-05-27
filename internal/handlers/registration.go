@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SUSE/suse-ai-up/internal/config"
+	"github.com/SUSE/suse-ai-up/pkg/auth"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/mcp"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/scanner"
+	"github.com/SUSE/suse-ai-up/pkg/services/virtualmcp"
 	"github.com/gin-gonic/gin"
-	"suse-ai-up/internal/config"
-	"suse-ai-up/pkg/auth"
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/mcp"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/scanner"
-	"suse-ai-up/pkg/services/virtualmcp"
 )
 
 // RegistrationHandler handles registration of discovered MCP servers as adapters

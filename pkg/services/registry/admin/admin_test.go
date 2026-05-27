@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"suse-ai-up/internal/config"
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/internal/config"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // fakeRegMgr implements loader.Manager for tests.

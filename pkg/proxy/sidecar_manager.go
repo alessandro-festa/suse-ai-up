@@ -16,8 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 
-	"suse-ai-up/pkg/deployer"
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/deployer"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // SidecarManager manages sidecar container deployments for MCP servers

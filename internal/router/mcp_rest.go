@@ -13,11 +13,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/mcp"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/proxy"
-	"suse-ai-up/pkg/session"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/mcp"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/proxy"
+	"github.com/SUSE/suse-ai-up/pkg/session"
 )
 
 // makeMCPRequestWithSession establishes MCP session and makes request

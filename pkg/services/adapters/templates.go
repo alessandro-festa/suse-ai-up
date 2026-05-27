@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // getMapKeys returns the keys of a map[string]interface{}

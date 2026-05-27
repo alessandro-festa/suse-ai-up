@@ -13,14 +13,14 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"suse-ai-up/internal/handlers"
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/middleware"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/proxy"
-	"suse-ai-up/pkg/services"
+	"github.com/SUSE/suse-ai-up/internal/handlers"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/middleware"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/proxy"
+	"github.com/SUSE/suse-ai-up/pkg/services"
 
-	adaptersvc "suse-ai-up/pkg/services/adapters"
+	adaptersvc "github.com/SUSE/suse-ai-up/pkg/services/adapters"
 
 	"gopkg.in/yaml.v3"
 )

@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"fmt"
-	"suse-ai-up/pkg/proxy"
+	"github.com/SUSE/suse-ai-up/pkg/proxy"
 )
 
 // Middleware defines the interface for MCP middleware

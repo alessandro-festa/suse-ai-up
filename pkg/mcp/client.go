@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // InitializeRequest represents the MCP initialize request

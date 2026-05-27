@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/scanner"
 	"github.com/gin-gonic/gin"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/scanner"
 )
 
 type DiscoveryHandler struct {

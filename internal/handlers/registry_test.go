@@ -10,8 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // fakeRegistryManager is a stand-in for RegistryManagerInterface that records
@@ -387,15 +387,15 @@ func TestUploadBulkRegistryEntries_FillsMissingIDs(t *testing.T) {
 
 func TestIsValidMCPFile(t *testing.T) {
 	cases := map[string]bool{
-		"script.py":         true,
-		"requirements.txt":  true,
-		"README.md":         true,
-		"config.json":       true,
-		"malware.exe":       false,
-		"image.png":         false,
-		"":                  false,
-		"script.PY":         false, // case-sensitive by current impl
-		"noextension":       false,
+		"script.py":        true,
+		"requirements.txt": true,
+		"README.md":        true,
+		"config.json":      true,
+		"malware.exe":      false,
+		"image.png":        false,
+		"":                 false,
+		"script.PY":        false, // case-sensitive by current impl
+		"noextension":      false,
 	}
 	for name, want := range cases {
 		if got := isValidMCPFile(name); got != want {

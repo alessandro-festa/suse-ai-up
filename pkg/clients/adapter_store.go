@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // AdapterResourceStore defines the interface for adapter storage

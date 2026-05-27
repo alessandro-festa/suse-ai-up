@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/logging"
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/logging"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // CreateAdapter creates a new adapter from a registry server

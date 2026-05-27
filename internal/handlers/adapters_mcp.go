@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // HandleMCPProtocol proxies MCP protocol requests to the sidecar

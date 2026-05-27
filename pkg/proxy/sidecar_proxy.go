@@ -6,9 +6,9 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/session"
 	"k8s.io/client-go/kubernetes"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/session"
 
 	"github.com/gin-gonic/gin"
 )

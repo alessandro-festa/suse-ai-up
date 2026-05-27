@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // SourceLabel is the canonical "source" tag stamped onto every MCPServer

@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 
-	"suse-ai-up/internal/config"
+	"github.com/SUSE/suse-ai-up/internal/config"
 )
 
 func initOTEL(ctx context.Context, cfg *config.Config) error {

@@ -1,8 +1,8 @@
 package middleware
 
 import (
+	"github.com/SUSE/suse-ai-up/pkg/proxy"
 	"log"
-	"suse-ai-up/pkg/proxy"
 	"time"
 )
 

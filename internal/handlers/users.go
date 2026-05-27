@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // CreateUserRequest represents a request to create a user

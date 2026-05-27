@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"suse-ai-up/pkg/session"
+	"github.com/SUSE/suse-ai-up/pkg/session"
 )
 
 // TestSessionStoreOperations tests the session store interface methods

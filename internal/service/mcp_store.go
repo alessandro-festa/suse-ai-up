@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // InMemoryMCPServerStore is a simple in-memory store for MCP servers

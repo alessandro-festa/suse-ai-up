@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 func TestGetMapKeys(t *testing.T) {
@@ -176,8 +176,8 @@ func TestLookupTemplatedVariable_MissingReturnsEmpty(t *testing.T) {
 	svc := &AdapterService{}
 
 	cases := []*models.MCPServer{
-		{Meta: nil},                          // no meta
-		{Meta: map[string]interface{}{}},     // no secrets
+		{Meta: nil},                      // no meta
+		{Meta: map[string]interface{}{}}, // no secrets
 		{Meta: map[string]interface{}{"secrets": "not-a-slice"}},
 		{Meta: map[string]interface{}{
 			"secrets": []interface{}{

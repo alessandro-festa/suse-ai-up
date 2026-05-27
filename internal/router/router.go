@@ -10,9 +10,9 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
-	"suse-ai-up/internal/bootstrap"
-	"suse-ai-up/pkg/auth"
-	"suse-ai-up/pkg/logging"
+	"github.com/SUSE/suse-ai-up/internal/bootstrap"
+	"github.com/SUSE/suse-ai-up/pkg/auth"
+	"github.com/SUSE/suse-ai-up/pkg/logging"
 )
 
 // Register installs CORS, /health, /docs and the full /api/v1 surface on r.
