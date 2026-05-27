@@ -16,6 +16,7 @@ import (
 	"suse-ai-up/pkg/mcp"
 	"suse-ai-up/pkg/models"
 	"suse-ai-up/pkg/scanner"
+	"suse-ai-up/pkg/services/virtualmcp"
 )
 
 // RegistrationHandler handles registration of discovered MCP servers as adapters
@@ -148,7 +149,7 @@ func (h *RegistrationHandler) createAdapterDataFromDiscovered(server *models.Dis
 	// Check if this is a VirtualMCP server
 	isVirtualMCP := false
 	if server.Metadata != nil {
-		if source, exists := server.Metadata["source"]; exists && source == "virtualmcp" {
+		if source, exists := server.Metadata["source"]; exists && source == virtualmcp.SourceLabel {
 			isVirtualMCP = true
 		}
 	}
