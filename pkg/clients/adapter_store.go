@@ -20,6 +20,9 @@ type AdapterResourceStore interface {
 	Update(ctx context.Context, adapter models.AdapterResource) error
 	Delete(ctx context.Context, id string) error
 	UpsertAsync(adapter models.AdapterResource, ctx context.Context) error
+	// Watch / Subscribe — Phase 1 stubs; see events.go and storefactory.go.
+	Watch(ctx context.Context) (<-chan StoreEvent, error)
+	Subscribe(ctx context.Context, handler StoreEventHandler) error
 }
 
 // FileAdapterStore implements AdapterResourceStore using file-based storage
@@ -130,6 +133,19 @@ func (s *FileAdapterStore) Delete(ctx context.Context, id string) error {
 // UpsertAsync stores or updates an adapter asynchronously
 func (s *FileAdapterStore) UpsertAsync(adapter models.AdapterResource, ctx context.Context) error {
 	return s.Create(ctx, adapter)
+}
+
+// Watch returns a nil channel and nil error. Phase 1 file-backed stores do not
+// emit change events; Phase 2 replaces this with controller-runtime informer
+// output.
+func (s *FileAdapterStore) Watch(ctx context.Context) (<-chan StoreEvent, error) {
+	return nil, nil
+}
+
+// Subscribe is a no-op in Phase 1. Phase 2 will wire the handler to informer
+// event channels.
+func (s *FileAdapterStore) Subscribe(ctx context.Context, handler StoreEventHandler) error {
+	return nil
 }
 
 // loadFromFile loads adapters from the JSON file
@@ -291,4 +307,14 @@ func (s *InMemoryAdapterStore) Delete(ctx context.Context, id string) error {
 // UpsertAsync stores or updates an adapter in memory
 func (s *InMemoryAdapterStore) UpsertAsync(adapter models.AdapterResource, ctx context.Context) error {
 	return s.Create(ctx, adapter)
+}
+
+// Watch is a Phase 1 no-op; see FileAdapterStore.Watch.
+func (s *InMemoryAdapterStore) Watch(ctx context.Context) (<-chan StoreEvent, error) {
+	return nil, nil
+}
+
+// Subscribe is a Phase 1 no-op; see FileAdapterStore.Subscribe.
+func (s *InMemoryAdapterStore) Subscribe(ctx context.Context, handler StoreEventHandler) error {
+	return nil
 }
