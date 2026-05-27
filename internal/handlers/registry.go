@@ -20,77 +20,12 @@ import (
 	"suse-ai-up/pkg/mcp"
 	"suse-ai-up/pkg/models"
 	"suse-ai-up/pkg/services"
+	registryloader "suse-ai-up/pkg/services/registry/loader"
 )
 
-// parseAndUploadRegistryYAML parses YAML data and uploads MCP servers to registry
-func parseAndUploadRegistryYAML(data []byte, registryManager RegistryManagerInterface, source string) error {
-	var servers []map[string]interface{}
-	if err := yaml.Unmarshal(data, &servers); err != nil {
-		return fmt.Errorf("could not parse registry YAML from %s: %w", source, err)
-	}
-
-	log.Printf("Loading %d MCP servers from %s", len(servers), source)
-
-	var mcpServers []*models.MCPServer
-	for _, serverData := range servers {
-		server := &models.MCPServer{}
-
-		if name, ok := serverData["name"].(string); ok {
-			server.ID = name
-			server.Name = name
-		} else {
-			log.Printf("Warning: Server missing name field, skipping: %+v", serverData)
-			continue
-		}
-
-		if desc, ok := serverData["description"].(string); ok {
-			server.Description = desc
-		}
-
-		if image, ok := serverData["image"].(string); ok {
-			server.Packages = []models.Package{
-				{
-					Identifier: image,
-					Transport: models.Transport{
-						Type: "stdio",
-					},
-				},
-			}
-		}
-
-		// Handle meta field
-		if meta, ok := serverData["meta"].(map[string]interface{}); ok {
-			server.Meta = meta
-		} else {
-			server.Meta = make(map[string]interface{})
-		}
-
-		server.Meta["source"] = "yaml"
-
-		// Include additional fields
-		if about, ok := serverData["about"].(map[string]interface{}); ok {
-			server.Meta["about"] = about
-		}
-		if sourceInfo, ok := serverData["source"].(map[string]interface{}); ok {
-			server.Meta["source_info"] = sourceInfo
-		}
-		if configField, ok := serverData["config"].(map[string]interface{}); ok {
-			server.Meta["config"] = configField
-		}
-		if serverType, ok := serverData["type"].(string); ok {
-			server.Meta["type"] = serverType
-		}
-
-		mcpServers = append(mcpServers, server)
-	}
-
-	// Use the registry manager to upload all servers
-	if err := registryManager.UploadRegistryEntries(mcpServers); err != nil {
-		return fmt.Errorf("could not upload registry entries: %w", err)
-	}
-
-	return nil
-}
+// compile-time check that DefaultRegistryManager satisfies the consolidated
+// loader's Manager interface in pkg/services/registry/loader.
+var _ registryloader.Manager = (*DefaultRegistryManager)(nil)
 
 // ServerType represents the type of MCP server
 type ServerType string
@@ -746,7 +681,7 @@ func (h *RegistryHandler) ReloadRegistry(c *gin.Context) {
 		if readErr != nil {
 			err = fmt.Errorf("failed to read local file %s: %w", source, readErr)
 		} else {
-			parseErr := parseAndUploadRegistryYAML(data, h.RegistryManager, source)
+			parseErr := registryloader.ParseAndUploadRegistryYAML(data, h.RegistryManager, source)
 			if parseErr != nil {
 				err = fmt.Errorf("failed to parse local file %s: %w", source, parseErr)
 			} else {

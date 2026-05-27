@@ -22,6 +22,7 @@ import (
 	"suse-ai-up/pkg/scanner"
 	"suse-ai-up/pkg/services"
 	adaptersvc "suse-ai-up/pkg/services/adapters"
+	registryloader "suse-ai-up/pkg/services/registry/loader"
 	"suse-ai-up/pkg/session"
 )
 
@@ -223,7 +224,9 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*AppServices, error) {
 	logging.ProxyLogger.Info("AdapterHandler created: %v", adapterHandler != nil)
 	logging.ProxyLogger.Success("AdapterService and AdapterHandler initialized")
 
-	loadRegistryFromFile(registryManager, cfg)
+	if err := registryloader.LoadInitialRegistry(ctx, registryManager, cfg); err != nil {
+		log.Printf("Warning: initial registry load returned error: %v", err)
+	}
 
 	var k8sClient kubernetes.Interface
 	if config, err := rest.InClusterConfig(); err == nil {
