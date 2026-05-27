@@ -1,9 +1,0 @@
-apiVersion: mcp.suse.com/v1alpha1
-kind: Placeholder
-metadata:
-  labels:
-    app.kubernetes.io/name: suse-ai-up
-    app.kubernetes.io/managed-by: kustomize
-  name: placeholder-sample
-spec:
-  # TODO(user): Add fields here
