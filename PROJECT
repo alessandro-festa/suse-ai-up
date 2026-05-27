@@ -48,4 +48,28 @@ resources:
   kind: Agent
   path: github.com/SUSE/suse-ai-up/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: suse.com
+  group: mcp
+  kind: User
+  path: github.com/SUSE/suse-ai-up/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: suse.com
+  group: mcp
+  kind: Group
+  path: github.com/SUSE/suse-ai-up/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: suse.com
+  group: mcp
+  kind: RouteAssignment
+  path: github.com/SUSE/suse-ai-up/api/v1alpha1
+  version: v1alpha1
 version: "3"
