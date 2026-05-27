@@ -7,6 +7,14 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - events
   verbs:
   - create
@@ -39,6 +47,7 @@ rules:
   - mcp.suse.com
   resources:
   - adapters
+  - mcpregistries
   verbs:
   - get
   - list
@@ -49,13 +58,29 @@ rules:
   - mcp.suse.com
   resources:
   - adapters/finalizers
+  - mcpregistries/finalizers
+  - mcpservers/finalizers
   verbs:
   - update
 - apiGroups:
   - mcp.suse.com
   resources:
   - adapters/status
+  - mcpregistries/status
+  - mcpservers/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - mcp.suse.com
+  resources:
+  - mcpservers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
