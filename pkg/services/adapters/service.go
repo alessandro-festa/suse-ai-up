@@ -1,9 +1,9 @@
 package services
 
 import (
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/mcp"
-	"suse-ai-up/pkg/proxy"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/mcp"
+	"github.com/SUSE/suse-ai-up/pkg/proxy"
 )
 
 // AdapterService manages adapters for remote MCP servers

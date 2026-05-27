@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // DefaultRegistryManager implements RegistryManagerInterface

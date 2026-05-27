@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/network"
-	"suse-ai-up/pkg/services/agents"
+	"github.com/SUSE/suse-ai-up/pkg/network"
+	"github.com/SUSE/suse-ai-up/pkg/services/agents"
 )
 
 // ServiceConfig represents the configuration for a plugin service

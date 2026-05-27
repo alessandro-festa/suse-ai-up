@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"suse-ai-up/pkg/plugins"
+	"github.com/SUSE/suse-ai-up/pkg/plugins"
 )
 
 // PluginHandler handles plugin service registration and management

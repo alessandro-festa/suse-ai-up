@@ -1,4 +1,4 @@
-module suse-ai-up
+module github.com/SUSE/suse-ai-up
 
 go 1.24.0
 

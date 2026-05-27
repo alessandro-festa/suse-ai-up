@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/session"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/session"
 
 	"github.com/gin-gonic/gin"
 )

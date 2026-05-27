@@ -10,8 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"suse-ai-up/pkg/models"
-	registryadmin "suse-ai-up/pkg/services/registry/admin"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	registryadmin "github.com/SUSE/suse-ai-up/pkg/services/registry/admin"
 )
 
 // UploadRegistryEntry handles POST /registry/upload

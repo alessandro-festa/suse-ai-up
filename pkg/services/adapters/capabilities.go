@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"suse-ai-up/pkg/logging"
-	"suse-ai-up/pkg/mcp"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/services"
+	"github.com/SUSE/suse-ai-up/pkg/logging"
+	"github.com/SUSE/suse-ai-up/pkg/mcp"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/services"
 )
 
 // SyncAdapterCapabilities syncs capabilities for an adapter

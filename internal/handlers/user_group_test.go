@@ -8,9 +8,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/services"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/services"
 )
 
 // newTestUserGroupHandler wires the real UserGroupService against in-memory stores.

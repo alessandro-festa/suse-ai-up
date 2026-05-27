@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // MCPDiscoveryService handles discovery of MCP server capabilities

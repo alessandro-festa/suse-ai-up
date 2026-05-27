@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"log"
-	"suse-ai-up/pkg/proxy"
+	"github.com/SUSE/suse-ai-up/pkg/proxy"
 )
 
 // LoggingMiddleware provides request/response logging

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/logging"
-	"suse-ai-up/pkg/models"
-	adaptersvc "suse-ai-up/pkg/services/adapters"
+	"github.com/SUSE/suse-ai-up/pkg/logging"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	adaptersvc "github.com/SUSE/suse-ai-up/pkg/services/adapters"
 )
 
 // CreateAdapter creates a new adapter from a registry server

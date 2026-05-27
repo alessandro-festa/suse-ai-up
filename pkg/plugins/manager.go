@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"suse-ai-up/internal/config"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/services/virtualmcp"
+	"github.com/SUSE/suse-ai-up/internal/config"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/services/virtualmcp"
 )
 
 // RegistryManagerInterface defines the interface for registry management

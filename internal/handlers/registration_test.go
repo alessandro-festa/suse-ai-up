@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/services/virtualmcp"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/services/virtualmcp"
 )
 
 func TestGenerateAdapterName(t *testing.T) {

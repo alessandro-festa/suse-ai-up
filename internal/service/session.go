@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/session"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/session"
 )
 
 // SessionManagementService handles session management operations

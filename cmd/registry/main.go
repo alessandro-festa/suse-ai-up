@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"suse-ai-up/pkg/services/registry"
+	"github.com/SUSE/suse-ai-up/pkg/services/registry"
 )
 
 func main() {

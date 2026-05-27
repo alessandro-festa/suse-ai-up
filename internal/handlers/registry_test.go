@@ -10,8 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // fakeRegistryManager is a stand-in for RegistryManagerInterface that records

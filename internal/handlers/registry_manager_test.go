@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 func TestDefaultRegistryManager_UploadAndClear(t *testing.T) {

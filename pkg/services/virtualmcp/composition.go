@@ -1,6 +1,6 @@
 package virtualmcp
 
-import "suse-ai-up/pkg/models"
+import "github.com/SUSE/suse-ai-up/pkg/models"
 
 // RouteRegistry exposes virtual-MCP route composition: assembling a single
 // virtual MCP server view from multiple registered adapters/backends.

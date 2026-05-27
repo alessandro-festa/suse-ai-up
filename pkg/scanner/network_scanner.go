@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"suse-ai-up/pkg/mcp"
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/mcp"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // truncateString truncates a string to the specified length

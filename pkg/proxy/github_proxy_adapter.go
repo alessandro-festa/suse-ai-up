@@ -2,9 +2,9 @@ package proxy
 
 import (
 	"github.com/gin-gonic/gin"
-	"suse-ai-up/pkg/mcp"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/session"
+	"github.com/SUSE/suse-ai-up/pkg/mcp"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/session"
 )
 
 // GitHubRemoteHTTPProxyAdapter extends RemoteHTTPProxyAdapter for GitHub-specific MCP handling

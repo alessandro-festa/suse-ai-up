@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"suse-ai-up/pkg/services/plugins"
+	"github.com/SUSE/suse-ai-up/pkg/services/plugins"
 )
 
 func main() {

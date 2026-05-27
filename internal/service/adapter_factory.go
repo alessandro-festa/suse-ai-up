@@ -7,8 +7,8 @@ import (
 	"log"
 	"strings"
 
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // RegistryClientInterface defines the interface for communicating with the registry service

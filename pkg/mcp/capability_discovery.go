@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // CapabilityDiscoveryService handles discovery of MCP server capabilities

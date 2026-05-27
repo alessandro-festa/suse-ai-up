@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	"suse-ai-up/pkg/mcp"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/session"
+	"github.com/SUSE/suse-ai-up/pkg/mcp"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/session"
 )
 
 // MockSessionStore for testing

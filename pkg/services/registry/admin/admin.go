@@ -20,9 +20,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"suse-ai-up/internal/config"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/services/registry/loader"
+	"github.com/SUSE/suse-ai-up/internal/config"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/services/registry/loader"
 )
 
 const defaultRegistryTimeout = 30 * time.Second

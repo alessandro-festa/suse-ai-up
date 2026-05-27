@@ -12,10 +12,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
-	_ "suse-ai-up/docs"
-	"suse-ai-up/internal/bootstrap"
-	"suse-ai-up/internal/config"
-	"suse-ai-up/internal/router"
+	_ "github.com/SUSE/suse-ai-up/docs"
+	"github.com/SUSE/suse-ai-up/internal/bootstrap"
+	"github.com/SUSE/suse-ai-up/internal/config"
+	"github.com/SUSE/suse-ai-up/internal/router"
 )
 
 // @title SUSE AI Uniproxy API

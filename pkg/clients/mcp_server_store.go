@@ -7,7 +7,7 @@ import (
 	"errors"
 	"sync"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // MCPServerStore interface for storing and retrieving MCP servers

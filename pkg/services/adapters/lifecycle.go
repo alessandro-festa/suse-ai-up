@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"suse-ai-up/pkg/logging"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/services"
+	"github.com/SUSE/suse-ai-up/pkg/logging"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/services"
 )
 
 // GetAdapter gets an adapter by ID with permission checking

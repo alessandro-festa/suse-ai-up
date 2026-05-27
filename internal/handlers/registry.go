@@ -9,13 +9,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"k8s.io/client-go/kubernetes"
 
-	"suse-ai-up/internal/config"
-	"suse-ai-up/pkg/clients"
-	"suse-ai-up/pkg/mcp"
-	"suse-ai-up/pkg/models"
-	"suse-ai-up/pkg/services"
-	registryadmin "suse-ai-up/pkg/services/registry/admin"
-	registryloader "suse-ai-up/pkg/services/registry/loader"
+	"github.com/SUSE/suse-ai-up/internal/config"
+	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/mcp"
+	"github.com/SUSE/suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/services"
+	registryadmin "github.com/SUSE/suse-ai-up/pkg/services/registry/admin"
+	registryloader "github.com/SUSE/suse-ai-up/pkg/services/registry/loader"
 )
 
 // compile-time check that DefaultRegistryManager satisfies the consolidated

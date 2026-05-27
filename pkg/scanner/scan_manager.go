@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // ScanStatus represents the status of a scan job

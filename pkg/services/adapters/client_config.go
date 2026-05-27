@@ -3,7 +3,7 @@ package services
 import (
 	"fmt"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // BuildCreateClientConfig returns the per-MCP-client (gemini, vscode) MCP

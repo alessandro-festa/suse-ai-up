@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"suse-ai-up/pkg/models"
+	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
 // DockerCommandExtractor extracts Docker commands from GitHub READMEs
