@@ -8,4 +8,5 @@ resources:
 - mcp_v1alpha1_user.yaml
 - mcp_v1alpha1_group.yaml
 - mcp_v1alpha1_routeassignment.yaml
+- mcp_v1alpha1_plugin.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

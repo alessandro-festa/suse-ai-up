@@ -1,0 +1,40 @@
+apiVersion: mcp.suse.com/v1alpha1
+kind: Plugin
+metadata:
+  name: smartagents-runtime
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  serviceType: smartagents
+  serviceURL: http://smartagents.suse-ai-up.svc.cluster.local:9090
+  version: 0.1.0
+  description: External SmartAgents runtime extending proxy with agent-to-agent capabilities.
+  capabilities:
+    - path: /agents/*
+      methods:
+        - GET
+        - POST
+      description: SmartAgents agent invocation surface.
+  healthCheck:
+    path: /healthz
+    intervalSeconds: 15
+    timeoutSeconds: 3
+---
+apiVersion: mcp.suse.com/v1alpha1
+kind: Plugin
+metadata:
+  name: enterprise-registry
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  serviceType: registry
+  serviceURL: https://registry.internal.example.com
+  version: "2026.05"
+  description: Enterprise MCP registry provider behind corporate auth.
+  capabilities:
+    - path: /v1/servers
+      methods: [GET]
+    - path: /v1/servers/*
+      methods: [GET]
