@@ -22,6 +22,7 @@ import (
 	"suse-ai-up/pkg/scanner"
 	"suse-ai-up/pkg/services"
 	adaptersvc "suse-ai-up/pkg/services/adapters"
+	registryadmin "suse-ai-up/pkg/services/registry/admin"
 	registryloader "suse-ai-up/pkg/services/registry/loader"
 	"suse-ai-up/pkg/session"
 )
@@ -236,7 +237,8 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*AppServices, error) {
 		log.Printf("Not running in Kubernetes cluster, ConfigMap updates disabled")
 	}
 
-	registryHandler := handlers.NewRegistryHandler(registryStore, registryManager, adapterStore, userGroupService, cfg, k8sClient)
+	registryAdminSvc := registryadmin.NewService(registryStore, registryManager, k8sClient, cfg)
+	registryHandler := handlers.NewRegistryHandler(registryStore, registryManager, adapterStore, userGroupService, cfg, k8sClient, registryAdminSvc)
 
 	userGroupHandler := handlers.NewUserGroupHandler(userGroupService)
 	authHandler := handlers.NewAuthHandler(userAuthService)

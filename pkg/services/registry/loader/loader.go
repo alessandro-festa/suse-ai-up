@@ -28,6 +28,14 @@ type Manager interface {
 	Clear() error
 }
 
+// Store is the minimal MCP server storage surface used by callers that need
+// to list, create, or look up servers (e.g. the admin reload/upload flows).
+type Store interface {
+	ListMCPServers() []*models.MCPServer
+	CreateMCPServer(server *models.MCPServer) error
+	GetMCPServer(id string) (*models.MCPServer, error)
+}
+
 // ParseAndUploadRegistryYAML parses a registry YAML payload and uploads each
 // entry through mgr. source is used only in log messages.
 func ParseAndUploadRegistryYAML(data []byte, mgr Manager, source string) error {
