@@ -1,0 +1,26 @@
+apiVersion: mcp.suse.com/v1alpha1
+kind: RouteAssignment
+metadata:
+  name: ops-team-read
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  description: Read-only access to ops-team routes; auto-spawns sidecars on first request.
+  permissions: read
+  autoSpawn: true
+  groups:
+    - name: ops-team
+---
+apiVersion: mcp.suse.com/v1alpha1
+kind: RouteAssignment
+metadata:
+  name: alice-admin
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  description: Admin grant to alice for routes that opt in.
+  permissions: admin
+  users:
+    - name: alice

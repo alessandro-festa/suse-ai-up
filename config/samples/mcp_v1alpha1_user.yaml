@@ -1,0 +1,33 @@
+apiVersion: mcp.suse.com/v1alpha1
+kind: User
+metadata:
+  name: alice
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  displayName: Alice Example
+  email: alice@example.com
+  authProvider: local
+  groups:
+    - name: ops-team
+  passwordSecretRef:
+    name: alice-credentials
+    key: passwordHash
+---
+apiVersion: mcp.suse.com/v1alpha1
+kind: User
+metadata:
+  name: bob-github
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  displayName: Bob (GitHub)
+  email: bob@example.com
+  authProvider: github
+  externalID: "1234567"
+  providerGroups:
+    - example-org/sre
+  groups:
+    - name: ops-team

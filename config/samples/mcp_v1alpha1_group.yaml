@@ -1,0 +1,16 @@
+apiVersion: mcp.suse.com/v1alpha1
+kind: Group
+metadata:
+  name: ops-team
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  displayName: Ops Team
+  description: Operators with access to systems-management MCP tools.
+  members:
+    - name: alice
+    - name: bob-github
+  permissions:
+    - server:read
+    - adapter:invoke
