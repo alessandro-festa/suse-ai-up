@@ -31,6 +31,14 @@ func NewRouteAssignmentHandler(userGroupService *services.UserGroupService, regi
 	}
 }
 
+// CreateRouteAssignmentRequest represents a request to create a route assignment
+type CreateRouteAssignmentRequest struct {
+	UserIDs     []string `json:"userIds,omitempty" example:"[\"user123\"]"`
+	GroupIDs    []string `json:"groupIds,omitempty" example:"[\"weather-team\"]"`
+	AutoSpawn   bool     `json:"autoSpawn" example:"true"`
+	Permissions string   `json:"permissions" example:"read"` // "read", "write", "admin"
+}
+
 // CreateRouteAssignment creates a route assignment for a server
 func (h *RouteAssignmentHandler) CreateRouteAssignment(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
