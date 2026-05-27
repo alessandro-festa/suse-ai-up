@@ -1,0 +1,23 @@
+# permissions for end users to view placeholders.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: suse-ai-up
+    app.kubernetes.io/managed-by: kustomize
+  name: placeholder-viewer-role
+rules:
+- apiGroups:
+  - mcp.suse.com
+  resources:
+  - placeholders
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - mcp.suse.com
+  resources:
+  - placeholders/status
+  verbs:
+  - get
