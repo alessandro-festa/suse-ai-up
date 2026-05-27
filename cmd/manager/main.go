@@ -38,6 +38,7 @@ import (
 	mcpv1alpha1 "github.com/SUSE/suse-ai-up/api/v1alpha1"
 	"github.com/SUSE/suse-ai-up/internal/controllers"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/services/auth"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -173,6 +174,38 @@ func main() {
 		Store:  mcpServerStore,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to set up controller", "controller", "MCPServer")
+		os.Exit(1)
+	}
+
+	// In-process auth projection stores. The reconcilers reflect the
+	// validated CR state here; §2.4 (HTTP shim rewire) consumes them
+	// so request-time permission checks see the live cluster state.
+	userStore := auth.NewInMemoryUserStore()
+	groupStore := auth.NewInMemoryGroupStore()
+	assignmentStore := auth.NewInMemoryAssignmentStore()
+
+	if err = (&controllers.UserReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Store:  userStore,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to set up controller", "controller", "User")
+		os.Exit(1)
+	}
+	if err = (&controllers.GroupReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Store:  groupStore,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to set up controller", "controller", "Group")
+		os.Exit(1)
+	}
+	if err = (&controllers.RouteAssignmentReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Store:  assignmentStore,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to set up controller", "controller", "RouteAssignment")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
