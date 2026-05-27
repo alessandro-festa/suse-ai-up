@@ -9,6 +9,12 @@ import (
 type ServiceType string
 
 const (
+	// ServiceTypeSmartAgents is the wire identifier for the SmartAgents
+	// agent-to-agent protocol. The protocol implementation, defaults and
+	// env-var-driven config live in pkg/services/agents. When you rename
+	// this constant, also rename agents.ProtocolNameSmartAgents — both
+	// values must stay in lockstep since they describe the same string
+	// seen by external HTTP clients.
 	ServiceTypeSmartAgents ServiceType = "smartagents"
 	ServiceTypeRegistry    ServiceType = "registry"
 	ServiceTypeVirtualMCP  ServiceType = "virtualmcp"

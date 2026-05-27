@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"suse-ai-up/pkg/plugins"
+	"suse-ai-up/pkg/services/agents"
 )
 
 // PluginRegistrationService handles plugin service registration
@@ -159,7 +160,7 @@ func (prs *PluginRegistrationService) ListServicesByType(c *gin.Context) {
 
 	var serviceType plugins.ServiceType
 	switch serviceTypeStr {
-	case "smartagents":
+	case agents.ProtocolNameSmartAgents:
 		serviceType = plugins.ServiceTypeSmartAgents
 	case "registry":
 		serviceType = plugins.ServiceTypeRegistry
