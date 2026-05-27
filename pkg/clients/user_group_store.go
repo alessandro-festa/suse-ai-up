@@ -23,6 +23,9 @@ type UserStore interface {
 	GetByEmail(ctx context.Context, email string) (*models.User, error)
 	GetByExternalID(ctx context.Context, provider, externalID string) (*models.User, error)
 	Authenticate(ctx context.Context, id, password string) (*models.User, error)
+	// Watch / Subscribe — Phase 1 stubs; see events.go and storefactory.go.
+	Watch(ctx context.Context) (<-chan StoreEvent, error)
+	Subscribe(ctx context.Context, handler StoreEventHandler) error
 }
 
 // GroupStore defines the interface for group storage
@@ -34,6 +37,9 @@ type GroupStore interface {
 	Delete(ctx context.Context, id string) error
 	AddMember(ctx context.Context, groupID, userID string) error
 	RemoveMember(ctx context.Context, groupID, userID string) error
+	// Watch / Subscribe — Phase 1 stubs; see events.go and storefactory.go.
+	Watch(ctx context.Context) (<-chan StoreEvent, error)
+	Subscribe(ctx context.Context, handler StoreEventHandler) error
 }
 
 // FileUserStore implements UserStore using file-based storage
@@ -409,6 +415,26 @@ func (s *FileGroupStore) loadFromFile() error {
 	return nil
 }
 
+// Watch is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *FileUserStore) Watch(ctx context.Context) (<-chan StoreEvent, error) {
+	return nil, nil
+}
+
+// Subscribe is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *FileUserStore) Subscribe(ctx context.Context, handler StoreEventHandler) error {
+	return nil
+}
+
+// Watch is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *FileGroupStore) Watch(ctx context.Context) (<-chan StoreEvent, error) {
+	return nil, nil
+}
+
+// Subscribe is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *FileGroupStore) Subscribe(ctx context.Context, handler StoreEventHandler) error {
+	return nil
+}
+
 // saveToFile saves groups to the JSON file
 func (s *FileGroupStore) saveToFile() error {
 	// Ensure directory exists
@@ -706,4 +732,24 @@ func (s *InMemoryGroupStore) RemoveMember(ctx context.Context, groupID, userID s
 	}
 
 	return fmt.Errorf("user %s is not a member of group %s", userID, groupID)
+}
+
+// Watch is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *InMemoryUserStore) Watch(ctx context.Context) (<-chan StoreEvent, error) {
+	return nil, nil
+}
+
+// Subscribe is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *InMemoryUserStore) Subscribe(ctx context.Context, handler StoreEventHandler) error {
+	return nil
+}
+
+// Watch is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *InMemoryGroupStore) Watch(ctx context.Context) (<-chan StoreEvent, error) {
+	return nil, nil
+}
+
+// Subscribe is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *InMemoryGroupStore) Subscribe(ctx context.Context, handler StoreEventHandler) error {
+	return nil
 }

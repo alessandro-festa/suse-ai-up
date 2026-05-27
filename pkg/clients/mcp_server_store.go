@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -16,6 +17,9 @@ type MCPServerStore interface {
 	UpdateMCPServer(id string, updated *models.MCPServer) error
 	DeleteMCPServer(id string) error
 	ListMCPServers() []*models.MCPServer
+	// Watch / Subscribe — Phase 1 stubs; see events.go and storefactory.go.
+	Watch(ctx context.Context) (<-chan StoreEvent, error)
+	Subscribe(ctx context.Context, handler StoreEventHandler) error
 }
 
 // ScanStore interface for storing and retrieving scan results
@@ -24,6 +28,9 @@ type ScanStore interface {
 	GetScan(scanID string) (models.ScanConfig, []models.DiscoveredServer, error)
 	ListScans() []string
 	DeleteScan(scanID string) error
+	// Watch / Subscribe — Phase 1 stubs; see events.go and storefactory.go.
+	Watch(ctx context.Context) (<-chan StoreEvent, error)
+	Subscribe(ctx context.Context, handler StoreEventHandler) error
 }
 
 var (
@@ -117,6 +124,16 @@ func (s *InMemoryMCPServerStore) ListMCPServers() []*models.MCPServer {
 	return servers
 }
 
+// Watch is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *InMemoryMCPServerStore) Watch(ctx context.Context) (<-chan StoreEvent, error) {
+	return nil, nil
+}
+
+// Subscribe is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *InMemoryMCPServerStore) Subscribe(ctx context.Context, handler StoreEventHandler) error {
+	return nil
+}
+
 // InMemoryScanStore implements ScanStore with in-memory storage
 type InMemoryScanStore struct {
 	scans map[string]ScanResult
@@ -185,5 +202,15 @@ func (s *InMemoryScanStore) DeleteScan(scanID string) error {
 	}
 
 	delete(s.scans, scanID)
+	return nil
+}
+
+// Watch is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *InMemoryScanStore) Watch(ctx context.Context) (<-chan StoreEvent, error) {
+	return nil, nil
+}
+
+// Subscribe is a Phase 1 no-op; see events.go and storefactory.go.
+func (s *InMemoryScanStore) Subscribe(ctx context.Context, handler StoreEventHandler) error {
 	return nil
 }

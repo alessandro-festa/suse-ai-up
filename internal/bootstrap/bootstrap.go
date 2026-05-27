@@ -70,14 +70,15 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*AppServices, error) {
 		}
 	}
 
-	adapterStore := clients.NewFileAdapterStore("/tmp/adapters.json")
+	stores := clients.New(clients.StoreConfig{})
+	adapterStore := stores.Adapter
 	tokenManager, err := auth.NewTokenManager("mcp-gateway")
 	if err != nil {
 		log.Fatalf("Failed to create token manager: %v", err)
 	}
 
-	userStore := clients.NewInMemoryUserStore()
-	groupStore := clients.NewInMemoryGroupStore()
+	userStore := stores.User
+	groupStore := stores.Group
 	userGroupService := services.NewUserGroupService(userStore, groupStore)
 
 	userAuthConfig := &models.UserAuthConfig{
@@ -215,7 +216,7 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*AppServices, error) {
 	tokenHandler := handlers.NewTokenHandler(adapterStore, tokenManager)
 	mcpAuthHandler := handlers.NewMCPAuthHandler(adapterStore, nil)
 
-	registryStore := clients.NewInMemoryMCPServerStore()
+	registryStore := stores.Registry
 	registryManager := handlers.NewDefaultRegistryManager(registryStore)
 
 	logging.ProxyLogger.Info("Initializing AdapterService with SidecarManager")
