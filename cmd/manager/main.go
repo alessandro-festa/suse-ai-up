@@ -39,6 +39,7 @@ import (
 	"github.com/SUSE/suse-ai-up/internal/controllers"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
 	"github.com/SUSE/suse-ai-up/pkg/services/auth"
+	"github.com/SUSE/suse-ai-up/pkg/services/virtualmcp"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -174,6 +175,23 @@ func main() {
 		Store:  mcpServerStore,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to set up controller", "controller", "MCPServer")
+		os.Exit(1)
+	}
+
+	// Composed-route table the reconciler reflects Ready/Degraded virtual
+	// routes into. NoOp capability provider for now — §2.4 swaps in a real
+	// implementation backed by the capability cache, no controller change
+	// required.
+	routeStore := virtualmcp.NewInMemoryRouteStore()
+	capabilityProvider := virtualmcp.NewNoOpCapabilityProvider()
+
+	if err = (&controllers.VirtualMCPRouteReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Store:    routeStore,
+		Provider: capabilityProvider,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to set up controller", "controller", "VirtualMCPRoute")
 		os.Exit(1)
 	}
 

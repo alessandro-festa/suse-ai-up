@@ -52,6 +52,7 @@ rules:
   - mcpregistries
   - routeassignments
   - users
+  - virtualmcproutes
   verbs:
   - get
   - list
@@ -67,6 +68,7 @@ rules:
   - mcpservers/finalizers
   - routeassignments/finalizers
   - users/finalizers
+  - virtualmcproutes/finalizers
   verbs:
   - update
 - apiGroups:
@@ -78,6 +80,7 @@ rules:
   - mcpservers/status
   - routeassignments/status
   - users/status
+  - virtualmcproutes/status
   verbs:
   - get
   - patch
@@ -86,7 +89,6 @@ rules:
   - mcp.suse.com
   resources:
   - agents
-  - virtualmcproutes
   verbs:
   - get
   - list
