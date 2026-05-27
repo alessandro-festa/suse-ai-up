@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"suse-ai-up/pkg/network"
+	"suse-ai-up/pkg/services/agents"
 )
 
 // ServiceConfig represents the configuration for a plugin service
@@ -139,11 +140,7 @@ func LoadConfig() *Config {
 
 		Services: PluginServicesConfig{
 			Services: map[string]ServiceConfig{
-				"smartagents": {
-					Enabled: getEnvBool("SMARTAGENTS_ENABLED", true),
-					URL:     getEnv("SMARTAGENTS_URL", "http://localhost:8910"),
-					Timeout: getEnv("SMARTAGENTS_TIMEOUT", "30s"),
-				},
+				agents.ProtocolNameSmartAgents: smartAgentsServiceConfig(),
 				"registry": {
 					Enabled: getEnvBool("REGISTRY_ENABLED", true),
 					URL:     getEnv("REGISTRY_URL", "http://localhost:8912"),
@@ -319,4 +316,17 @@ func (c *Config) GetServerURLs() []string {
 	}
 
 	return urls
+}
+
+// smartAgentsServiceConfig builds the smartagents ServiceConfig from
+// SMARTAGENTS_* env vars. The defaults and env var names live in the
+// agents package; this thin wrapper just adapts them into the
+// ServiceConfig shape used by PluginServicesConfig.
+func smartAgentsServiceConfig() ServiceConfig {
+	c := agents.SmartAgentsConfigFromEnv(getEnv, getEnvBool)
+	return ServiceConfig{
+		Enabled: c.Enabled,
+		URL:     c.URL,
+		Timeout: c.Timeout,
+	}
 }
