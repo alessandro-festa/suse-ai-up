@@ -314,6 +314,9 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		serviceManager = plugins.NewServiceManager(cfg, registryManager)
 	}
 	pluginHandler := handlers.NewPluginHandler(serviceManager)
+	if shared.CRClient != nil {
+		pluginHandler = pluginHandler.WithCRClient(shared.CRClient, shared.Namespace)
+	}
 
 	return &AppServices{
 		Cfg:                    cfg,

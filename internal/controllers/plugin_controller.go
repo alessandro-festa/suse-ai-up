@@ -251,7 +251,14 @@ func (r *PluginReconciler) removeFromStore(ctx context.Context, id string) {
 	}
 }
 
-func pluginStoreID(namespace, name string) string { return namespace + "/" + name }
+// pluginStoreID is the key under which a Plugin CR is reflected into
+// ServiceManager. We use the bare CR name (not <namespace>/<name>) so it
+// matches the raw service_id callers submit via POST /api/v1/plugins/register
+// — the HTTP read path queries the store by that same raw id. The
+// operator runs in a single workload namespace today, so the prefix
+// would be dead weight and would silently break the read path for any
+// CR-backed plugin (lookup-by-id misses the prefixed key).
+func pluginStoreID(_ string, name string) string { return name }
 
 // pluginToRegistration projects a Plugin CR into the wire shape
 // *plugins.ServiceManager expects. Lossy by design — the store is a
