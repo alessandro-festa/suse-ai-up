@@ -1,13 +1,12 @@
 # =============================================================================
 # suse-ai-up Makefile
 #
-# Two binaries live in this repo:
-#   - uniproxy (HTTP server, the existing service)            → cmd/uniproxy
-#   - manager  (Kubernetes operator, kubebuilder-generated)    → cmd/manager
+# Single primary binary:
+#   - manager (Kubernetes operator + HTTP data plane) → cmd/manager
 #
-# Targets that touch only the uniproxy keep their original names; targets that
-# touch only the manager are suffixed with `-manager`. Shared targets (test,
-# fmt, vet, lint, manifests, generate) operate on the whole module.
+# P2.4/PR1 consolidated the HTTP server (formerly cmd/uniproxy) into the
+# manager process. Shared targets (test, fmt, vet, lint, manifests, generate)
+# operate on the whole module.
 # =============================================================================
 
 # ---- Image / version ---------------------------------------------------------
@@ -35,11 +34,11 @@ all: build
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-##@ Uniproxy (HTTP server)
+##@ Manager (operator + HTTP data plane)
 
 .PHONY: build
-build: ## Build the uniproxy binary.
-	go build -o suse-ai-up ./cmd/uniproxy
+build: ## Build the consolidated manager binary.
+	go build -o suse-ai-up ./cmd/manager
 
 .PHONY: clean
 clean: ## Remove built binaries.
@@ -47,15 +46,15 @@ clean: ## Remove built binaries.
 	rm -rf bin/
 
 .PHONY: dev
-dev: build ## Build and run the uniproxy locally.
+dev: build ## Build and run the manager locally (needs KUBECONFIG).
 	./suse-ai-up
 
 .PHONY: docker-build
-docker-build: ## Build the uniproxy docker image (target=uniproxy).
-	$(CONTAINER_TOOL) build --target=uniproxy -t suse-ai-up:latest .
+docker-build: ## Build the consolidated docker image.
+	$(CONTAINER_TOOL) build -t suse-ai-up:latest .
 
 .PHONY: docker-run
-docker-run: docker-build ## Build and run the uniproxy docker image.
+docker-run: docker-build ## Build and run the consolidated docker image.
 	$(CONTAINER_TOOL) run -p 8911:8911 suse-ai-up:latest
 
 ##@ Helm
@@ -78,7 +77,7 @@ helm-test: helm-upgrade ## Helm-upgrade then print sanity-check commands.
 	@echo "curl -H 'X-User-ID: admin' http://localhost:8911/api/v1/registry"
 
 .PHONY: test-local
-test-local: build ## Run the uniproxy locally and smoke-test a few endpoints.
+test-local: build ## Run the manager locally and smoke-test a few HTTP endpoints.
 	@echo "Starting SUSE AI Uniproxy locally..."
 	./suse-ai-up &
 	@echo "Waiting for service to start..."
@@ -127,7 +126,7 @@ generate: controller-gen ## Generate DeepCopy methods for API types.
 ##@ Operator — build / run
 
 .PHONY: build-manager
-build-manager: manifests generate ## Build the manager binary.
+build-manager: manifests generate ## Build the manager binary into bin/manager.
 	go build -o bin/manager ./cmd/manager
 
 .PHONY: run-manager
@@ -135,8 +134,8 @@ run-manager: manifests generate ## Run the manager from your host against ~/.kub
 	go run ./cmd/manager
 
 .PHONY: docker-build-manager
-docker-build-manager: ## Build the manager docker image (target=manager).
-	$(CONTAINER_TOOL) build --target=manager -t ${IMG} .
+docker-build-manager: ## Build the manager docker image.
+	$(CONTAINER_TOOL) build -t ${IMG} .
 
 .PHONY: docker-push-manager
 docker-push-manager: ## Push the manager docker image.
@@ -147,7 +146,7 @@ PLATFORMS ?= linux/arm64,linux/amd64
 docker-buildx-manager: ## Build and push the manager image for multiple platforms.
 	- $(CONTAINER_TOOL) buildx create --name suse-ai-up-builder
 	$(CONTAINER_TOOL) buildx use suse-ai-up-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --target=manager --tag ${IMG} .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} .
 	- $(CONTAINER_TOOL) buildx rm suse-ai-up-builder
 
 .PHONY: build-installer

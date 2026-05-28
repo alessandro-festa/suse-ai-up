@@ -59,10 +59,27 @@ type AppServices struct {
 	PluginHandler          *handlers.PluginHandler
 }
 
+// SharedStores carries store instances the caller owns and wants the
+// bootstrap layer to reuse instead of constructing fresh ones. Each field
+// is optional; nil means bootstrap falls back to its default (file- or
+// in-memory-backed). Today only the MCPServerStore can be shared between
+// cmd/manager (reconciler-side) and the HTTP handlers; other reconciler
+// stores live on incompatible interfaces and are unified in P2.4/PR3.
+type SharedStores struct {
+	MCPServerStore clients.MCPServerStore
+}
+
 // Bootstrap wires every component the proxy needs and returns them as a single
 // struct. It is a pure extraction from cmd/uniproxy/main.go's RunUniproxy; no
-// behavior change.
+// behavior change. Equivalent to BootstrapWithStores with an empty SharedStores.
 func Bootstrap(ctx context.Context, cfg *config.Config) (*AppServices, error) {
+	return BootstrapWithStores(ctx, cfg, SharedStores{})
+}
+
+// BootstrapWithStores wires the proxy with caller-provided stores swapped
+// in for the bootstrap-default ones. Used by cmd/manager to make the HTTP
+// handlers and the reconcilers see the same in-process state.
+func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedStores) (*AppServices, error) {
 	if cfg.OtelEnabled {
 		if err := initOTEL(ctx, cfg); err != nil {
 			log.Printf("Failed to initialize OpenTelemetry: %v", err)
@@ -71,6 +88,9 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*AppServices, error) {
 	}
 
 	stores := clients.New(clients.StoreConfig{})
+	if shared.MCPServerStore != nil {
+		stores.Registry = shared.MCPServerStore
+	}
 	adapterStore := stores.Adapter
 	tokenManager, err := auth.NewTokenManager("mcp-gateway")
 	if err != nil {
