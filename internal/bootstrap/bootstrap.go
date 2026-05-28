@@ -9,6 +9,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/SUSE/suse-ai-up/internal/config"
 	"github.com/SUSE/suse-ai-up/internal/handlers"
@@ -68,11 +69,20 @@ type AppServices struct {
 // see CR-reconciled state. Writes and Authenticate stay on the local
 // file store — unifying those requires User CR credentialSecretRef
 // support, which is a follow-up post Epic 1.
+//
+// CRClient + Namespace (P2.4d) let the AdapterHandler write Adapter CRs
+// directly via the manager's controller-runtime client. When both are
+// set, AdapterHandler bypasses the legacy in-memory AdapterStore on
+// Create/Update/Delete and lets AdapterReconciler own the resulting
+// Deployment+Service. Adapter reads also re-route through the CR
+// projection so kubectl-applied Adapters are visible to GET /api/v1/adapters.
 type SharedStores struct {
 	MCPServerStore       clients.MCPServerStore
 	PluginServiceManager *plugins.ServiceManager
 	UserStore            authsvc.UserStore
 	GroupStore           authsvc.GroupStore
+	CRClient             client.Client
+	Namespace            string
 }
 
 // BootstrapWithStores wires the proxy with caller-provided stores swapped
@@ -90,7 +100,17 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 	if shared.MCPServerStore != nil {
 		stores.Registry = shared.MCPServerStore
 	}
+	// adapterStore is the in-memory/file store consulted by the legacy
+	// plugin-registration path (internal/handlers/registration.go) and by
+	// internal/service/adapter_factory.go. In CR mode (CRClient != nil) we
+	// swap the AdapterService's view onto a CR-backed projection so HTTP
+	// reads see kubectl-applied Adapters; the legacy callers above keep
+	// their own store untouched.
 	adapterStore := stores.Adapter
+	var adapterServiceStore clients.AdapterResourceStore = adapterStore
+	if shared.CRClient != nil {
+		adapterServiceStore = handlers.NewAdapterCRStore(shared.CRClient, shared.Namespace)
+	}
 	tokenManager, err := auth.NewTokenManager("mcp-gateway")
 	if err != nil {
 		log.Fatalf("Failed to create token manager: %v", err)
@@ -259,9 +279,12 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 	registryManager := handlers.NewDefaultRegistryManager(registryStore)
 
 	logging.ProxyLogger.Info("Initializing AdapterService with SidecarManager")
-	adapterService := adaptersvc.NewAdapterService(adapterStore, registryStore, sidecarManager)
+	adapterService := adaptersvc.NewAdapterService(adapterServiceStore, registryStore, sidecarManager)
 	logging.ProxyLogger.Info("AdapterService created: %v", adapterService != nil)
 	adapterHandler := handlers.NewAdapterHandler(adapterService, userGroupService)
+	if shared.CRClient != nil {
+		adapterHandler = adapterHandler.WithCRClient(shared.CRClient, shared.Namespace)
+	}
 	logging.ProxyLogger.Info("AdapterHandler created: %v", adapterHandler != nil)
 	logging.ProxyLogger.Success("AdapterService and AdapterHandler initialized")
 

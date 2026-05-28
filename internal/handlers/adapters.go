@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/SUSE/suse-ai-up/pkg/models"
 	"github.com/SUSE/suse-ai-up/pkg/services"
 	adaptersvc "github.com/SUSE/suse-ai-up/pkg/services/adapters"
@@ -14,18 +16,37 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// AdapterHandler handles adapter management requests
+// AdapterHandler handles adapter management requests.
+//
+// crClient + namespace are the P2.4d write-through wiring. When both are
+// set, CreateAdapter/UpdateAdapter/DeleteAdapter write Adapter CRs through
+// the controller-runtime client (so AdapterReconciler owns the resulting
+// Deployment+Service). When unset, the handler falls back to adapterService
+// for backwards compatibility with non-operator callers (registry service,
+// tests).
 type AdapterHandler struct {
 	adapterService   *adaptersvc.AdapterService
 	userGroupService *services.UserGroupService
+	crClient         client.Client
+	namespace        string
 }
 
-// NewAdapterHandler creates a new adapter handler
+// NewAdapterHandler creates a new adapter handler. Use WithCRClient to
+// enable CR-backed write-through (P2.4d).
 func NewAdapterHandler(adapterService *adaptersvc.AdapterService, userGroupService *services.UserGroupService) *AdapterHandler {
 	return &AdapterHandler{
 		adapterService:   adapterService,
 		userGroupService: userGroupService,
 	}
+}
+
+// WithCRClient enables CR-backed write-through. When set, write handlers
+// project requests onto Adapter CRs and poll Status.Conditions[Ready]
+// before responding. Returns the handler for chaining.
+func (h *AdapterHandler) WithCRClient(c client.Client, namespace string) *AdapterHandler {
+	h.crClient = c
+	h.namespace = namespace
+	return h
 }
 
 // CreateAdapterRequest represents a request to create an adapter
