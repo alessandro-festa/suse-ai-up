@@ -78,24 +78,64 @@ func (h *RegistryHandler) UploadRegistryEntry(c *gin.Context) {
 // @Tags registry
 // @Accept json
 // @Produce json
-// @Param servers body []models.MCPServer true "Array of MCP server data"
+// @Param servers body []UploadRegistryEntryRequest true "Array of MCP server data"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {string} string "Bad Request"
 // @Router /api/v1/registry/upload/bulk [post]
 func (h *RegistryHandler) UploadBulkRegistryEntries(c *gin.Context) {
-	var servers []*models.MCPServer
-	if err := c.ShouldBindJSON(&servers); err != nil {
+	var reqs []UploadRegistryEntryRequest
+	if err := c.ShouldBindJSON(&reqs); err != nil {
 		log.Printf("Error decoding MCP servers: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 		return
 	}
 
-	for _, server := range servers {
-		if server.ID == "" {
-			server.ID = generateID()
+	// Validation-first: every entry must pass before we touch any store
+	// or create any CR. Failures return 400 with the offending index so
+	// the caller can localize the bad row in a large payload.
+	seen := make(map[string]int, len(reqs))
+	for i := range reqs {
+		req := &reqs[i]
+		if req.Name == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("entry index %d: MCP server name is required", i),
+			})
+			return
 		}
+		if _, ok := resolvePriority(req.Priority); !ok {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("entry index %d: priority must be between %d and %d", i, mcpPriorityMin, mcpPriorityMax),
+			})
+			return
+		}
+		if req.ID == "" {
+			req.ID = generateID()
+		}
+		if prev, dup := seen[req.ID]; dup {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("duplicate id %q in request (indices %d and %d)", req.ID, prev, i),
+			})
+			return
+		}
+		seen[req.ID] = i
 	}
 
+	if h.crClient != nil {
+		userID := c.GetHeader("X-User-ID")
+		if userID == "" {
+			userID = "default-user"
+		}
+		h.createBulkMCPServerCR(c, reqs, userID)
+		return
+	}
+
+	// Legacy path: in-memory store. Priority is ignored here (it only has
+	// meaning on the CR's Status field); flat-MCPServer clients keep
+	// working unchanged.
+	servers := make([]*models.MCPServer, len(reqs))
+	for i := range reqs {
+		servers[i] = &reqs[i].MCPServer
+	}
 	if err := h.RegistryManager.UploadRegistryEntries(servers); err != nil {
 		log.Printf("Error uploading MCP servers: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -110,6 +150,7 @@ func (h *RegistryHandler) UploadBulkRegistryEntries(c *gin.Context) {
 	log.Printf("Bulk uploaded %d MCP servers", len(servers))
 	c.JSON(http.StatusOK, response)
 }
+
 
 // UploadLocalMCP handles POST /registry/upload/local-mcp
 // @Summary Upload a local MCP server implementation
