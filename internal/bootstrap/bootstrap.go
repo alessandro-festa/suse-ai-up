@@ -62,11 +62,13 @@ type AppServices struct {
 // SharedStores carries store instances the caller owns and wants the
 // bootstrap layer to reuse instead of constructing fresh ones. Each field
 // is optional; nil means bootstrap falls back to its default (file- or
-// in-memory-backed). Today only the MCPServerStore can be shared between
-// cmd/manager (reconciler-side) and the HTTP handlers; other reconciler
-// stores live on incompatible interfaces and are unified in P2.4/PR3.
+// in-memory-backed). P2.4/PR2 added PluginServiceManager so the
+// PluginReconciler and PluginHandler project into and read from the same
+// in-process plugin registry; user/group/assignment unification is
+// deferred to P2.4/PR3, where the handlers move to the auth.* types.
 type SharedStores struct {
-	MCPServerStore clients.MCPServerStore
+	MCPServerStore       clients.MCPServerStore
+	PluginServiceManager *plugins.ServiceManager
 }
 
 // Bootstrap wires every component the proxy needs and returns them as a single
@@ -267,7 +269,10 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 	logging.ProxyLogger.Info("UserGroupHandler created: %v", userGroupHandler != nil)
 	logging.ProxyLogger.Info("RouteAssignmentHandler created: %v", routeAssignmentHandler != nil)
 
-	serviceManager := plugins.NewServiceManager(cfg, registryManager)
+	serviceManager := shared.PluginServiceManager
+	if serviceManager == nil {
+		serviceManager = plugins.NewServiceManager(cfg, registryManager)
+	}
 	pluginHandler := handlers.NewPluginHandler(serviceManager)
 
 	return &AppServices{

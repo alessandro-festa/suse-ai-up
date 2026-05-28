@@ -40,8 +40,10 @@ import (
 	"github.com/SUSE/suse-ai-up/internal/bootstrap"
 	"github.com/SUSE/suse-ai-up/internal/config"
 	"github.com/SUSE/suse-ai-up/internal/controllers"
+	"github.com/SUSE/suse-ai-up/internal/handlers"
 	"github.com/SUSE/suse-ai-up/internal/httpserver"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
+	"github.com/SUSE/suse-ai-up/pkg/plugins"
 	"github.com/SUSE/suse-ai-up/pkg/services/agents"
 	"github.com/SUSE/suse-ai-up/pkg/services/auth"
 	"github.com/SUSE/suse-ai-up/pkg/services/virtualmcp"
@@ -249,18 +251,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	// PluginReconciler probes registered Plugin CRs and projects them
-	// into the in-process plugin registry. Store is intentionally nil
-	// here — §2.4 (HTTP shim rewire) is responsible for sharing the
-	// pkg/plugins.ServiceManager instance with the data plane; until
-	// then the reconciler probes plugins and keeps Status fresh
-	// without affecting request routing, matching the wiring used for
-	// the agent/route stores when they first landed.
+	// Plugin registry shared between PluginReconciler and the HTTP
+	// PluginHandler (P2.4/PR2). One *plugins.ServiceManager instance
+	// is constructed here, registered as the reconciler's Store so
+	// reconciled Plugin CRs project into it, and passed to bootstrap
+	// via SharedStores so the HTTP /api/v1/plugins/* handlers query
+	// the same in-process map. DefaultRegistryManager is a stateless
+	// wrapper over mcpServerStore; bootstrap builds another one for
+	// the registry-admin path — they share the underlying store, so
+	// both views stay coherent.
+	httpCfg := config.LoadConfig()
+	pluginRegistryManager := handlers.NewDefaultRegistryManager(mcpServerStore)
+	pluginServiceManager := plugins.NewServiceManager(httpCfg, pluginRegistryManager)
+
 	if err = (&controllers.PluginReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Prober:          controllers.NewProber(nil),
-		Store:           nil,
+		Store:           pluginServiceManager,
 		DefaultInterval: 30 * time.Second,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to set up controller", "controller", "Plugin")
@@ -270,14 +278,13 @@ func main() {
 
 	// HTTP server (formerly cmd/uniproxy) runs inside the operator
 	// process so handlers and reconcilers share the same in-process
-	// state. P2.4/PR1 wires only the MCPServerStore — the one store
-	// whose interface matches on both sides today; the other reconciler
-	// stores get unified in PR2 (adapter/plugin) and PR3 (user/group/
-	// assignment), after the handlers are rewired to consume the
-	// reconciler-side types directly.
-	httpCfg := config.LoadConfig()
+	// state. P2.4/PR1 wired MCPServerStore; PR2 adds the
+	// PluginServiceManager so PluginReconciler projections are visible
+	// to /api/v1/plugins/*. User/group/assignment stores get unified
+	// in PR3, after the handlers are rewired to the auth.* types.
 	if err := mgr.Add(httpserver.NewRunnable(httpCfg, bootstrap.SharedStores{
-		MCPServerStore: mcpServerStore,
+		MCPServerStore:       mcpServerStore,
+		PluginServiceManager: pluginServiceManager,
 	})); err != nil {
 		setupLog.Error(err, "unable to add HTTP server runnable")
 		os.Exit(1)
