@@ -37,7 +37,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	mcpv1alpha1 "github.com/SUSE/suse-ai-up/api/v1alpha1"
+	"github.com/SUSE/suse-ai-up/internal/bootstrap"
+	"github.com/SUSE/suse-ai-up/internal/config"
 	"github.com/SUSE/suse-ai-up/internal/controllers"
+	"github.com/SUSE/suse-ai-up/internal/httpserver"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
 	"github.com/SUSE/suse-ai-up/pkg/services/agents"
 	"github.com/SUSE/suse-ai-up/pkg/services/auth"
@@ -264,6 +267,21 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
+
+	// HTTP server (formerly cmd/uniproxy) runs inside the operator
+	// process so handlers and reconcilers share the same in-process
+	// state. P2.4/PR1 wires only the MCPServerStore — the one store
+	// whose interface matches on both sides today; the other reconciler
+	// stores get unified in PR2 (adapter/plugin) and PR3 (user/group/
+	// assignment), after the handlers are rewired to consume the
+	// reconciler-side types directly.
+	httpCfg := config.LoadConfig()
+	if err := mgr.Add(httpserver.NewRunnable(httpCfg, bootstrap.SharedStores{
+		MCPServerStore: mcpServerStore,
+	})); err != nil {
+		setupLog.Error(err, "unable to add HTTP server runnable")
+		os.Exit(1)
+	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")

@@ -11,8 +11,47 @@ rules:
   resources: ["deployments", "replicasets"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: [""]
-  resources: ["pods", "services", "pods/log", "events", "namespaces", "configmaps"]
+  resources: ["pods", "services", "pods/log", "events", "namespaces", "configmaps", "secrets"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# P2.4/PR1: consolidated binary runs the kubebuilder reconcilers in-process.
+# Mirrors the generated config/rbac/role.yaml so `helm install` produces a
+# manager pod that can actually watch its CRDs.
+- apiGroups: ["mcp.suse.com"]
+  resources:
+  - adapters
+  - agents
+  - groups
+  - mcpregistries
+  - mcpservers
+  - plugins
+  - routeassignments
+  - users
+  - virtualmcproutes
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["mcp.suse.com"]
+  resources:
+  - adapters/status
+  - agents/status
+  - groups/status
+  - mcpregistries/status
+  - mcpservers/status
+  - plugins/status
+  - routeassignments/status
+  - users/status
+  - virtualmcproutes/status
+  verbs: ["get", "patch", "update"]
+- apiGroups: ["mcp.suse.com"]
+  resources:
+  - adapters/finalizers
+  - agents/finalizers
+  - groups/finalizers
+  - mcpregistries/finalizers
+  - mcpservers/finalizers
+  - plugins/finalizers
+  - routeassignments/finalizers
+  - users/finalizers
+  - virtualmcproutes/finalizers
+  verbs: ["update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

@@ -1,11 +1,12 @@
 # syntax=docker/dockerfile:1
 #
-# Multi-stage Dockerfile producing two images via --target:
-#   docker build --target=uniproxy -t suse-ai-up:latest .          (default)
-#   docker build --target=manager  -t suse-ai-up-manager:latest .
+# Single-stage Dockerfile producing the consolidated operator image. The
+# manager binary hosts both the controller-runtime reconcilers and the
+# HTTP server formerly served by cmd/uniproxy — see P2.4/PR1 in issue #28.
 #
-# The default target is the first runtime stage (uniproxy) so existing
-# `docker build .` invocations keep producing the HTTP server image.
+# Base is bci-base (not distroless) because the HTTP server needs to write
+# initial users/groups, mount the registry config + docs ConfigMaps, and
+# pass an `nc`-based HEALTHCHECK; distroless lacks the shell + utilities.
 
 # --- builder ---------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS builder
@@ -20,18 +21,17 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -ldflags="-w -s" -o /out/uniproxy ./cmd/uniproxy
-RUN go build -ldflags="-w -s" -o /out/manager  ./cmd/manager
+RUN go build -ldflags="-w -s" -o /out/manager ./cmd/manager
 
-# --- uniproxy runtime (default) -------------------------------------------
-FROM registry.suse.com/bci/bci-base:16.0 AS uniproxy
+# --- runtime --------------------------------------------------------------
+FROM registry.suse.com/bci/bci-base:16.0
 
 RUN zypper --non-interactive install ca-certificates timezone && \
     useradd -r -s /bin/bash -u 1000 mcpuser
 
 WORKDIR /home/mcpuser
 
-COPY --from=builder /out/uniproxy             ./suse-ai-up
+COPY --from=builder /out/manager              ./suse-ai-up
 COPY --from=builder /app/hack/registry        ./hack/registry
 COPY --from=builder /app/docs                 ./docs
 
@@ -45,14 +45,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8911 3911
 
 CMD ["./suse-ai-up"]
-
-# --- manager runtime (operator) -------------------------------------------
-FROM gcr.io/distroless/static:nonroot AS manager
-
-WORKDIR /
-
-COPY --from=builder /out/manager .
-
-USER 65532:65532
-
-ENTRYPOINT ["/manager"]
