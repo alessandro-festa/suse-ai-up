@@ -2,7 +2,15 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/mcp.suse.com_placeholders.yaml
+- bases/mcp.suse.com_adapters.yaml
+- bases/mcp.suse.com_agents.yaml
+- bases/mcp.suse.com_groups.yaml
+- bases/mcp.suse.com_mcpregistries.yaml
+- bases/mcp.suse.com_mcpservers.yaml
+- bases/mcp.suse.com_plugins.yaml
+- bases/mcp.suse.com_routeassignments.yaml
+- bases/mcp.suse.com_users.yaml
+- bases/mcp.suse.com_virtualmcproutes.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
