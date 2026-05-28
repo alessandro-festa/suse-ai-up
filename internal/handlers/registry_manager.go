@@ -32,10 +32,19 @@ func (rm *DefaultRegistryManager) UploadRegistryEntries(entries []*models.MCPSer
 	return nil
 }
 
-// Clear removes all MCP servers from the registry
+// Clear removes all MCP servers from the registry except entries
+// projected from MCPServer CRs by MCPServerReconciler. Used by the
+// registry loader before a YAML reload — wiping CR-projected entries
+// would create a window where HTTP-uploaded servers vanish until the
+// reconciler next re-runs, breaking restart persistence (P2.4g).
 func (rm *DefaultRegistryManager) Clear() error {
 	servers := rm.store.ListMCPServers()
 	for _, server := range servers {
+		if server.Meta != nil {
+			if src, ok := server.Meta["source"].(string); ok && src == "mcpserver-cr" {
+				continue
+			}
+		}
 		if err := rm.store.DeleteMCPServer(server.ID); err != nil {
 			return fmt.Errorf("failed to delete server %s: %w", server.ID, err)
 		}

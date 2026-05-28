@@ -309,6 +309,9 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 
 	registryAdminSvc := registryadmin.NewService(registryStore, registryManager, k8sClient, cfg)
 	registryHandler := handlers.NewRegistryHandler(registryStore, registryManager, adapterStore, userGroupService, cfg, k8sClient, registryAdminSvc)
+	if shared.CRClient != nil {
+		registryHandler = registryHandler.WithCRClient(shared.CRClient, shared.Namespace)
+	}
 
 	userGroupHandler := handlers.NewUserGroupHandler(userGroupService)
 	if shared.CRClient != nil {

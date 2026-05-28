@@ -14,42 +14,62 @@ import (
 	registryadmin "github.com/SUSE/suse-ai-up/pkg/services/registry/admin"
 )
 
+// UploadRegistryEntryRequest is the wire shape for POST/PUT
+// /api/v1/registry/upload. It embeds models.MCPServer so existing
+// clients sending the bare model continue to decode unchanged, and adds
+// an optional Priority that — in CR mode — is patched onto
+// MCPServer.Status.Priority post-Create. Values outside [0, 1000] are
+// rejected with 400.
+type UploadRegistryEntryRequest struct {
+	models.MCPServer
+	Priority *int32 `json:"priority,omitempty"`
+}
+
 // UploadRegistryEntry handles POST /registry/upload
 // @Summary Upload a single registry entry
 // @Description Upload a single MCP server registry entry
 // @Tags registry
 // @Accept json
 // @Produce json
-// @Param server body models.MCPServer true "MCP server data"
+// @Param server body UploadRegistryEntryRequest true "MCP server data"
 // @Success 201 {object} models.MCPServer
 // @Failure 400 {string} string "Bad Request"
 // @Router /api/v1/registry/upload [post]
 func (h *RegistryHandler) UploadRegistryEntry(c *gin.Context) {
-	var server models.MCPServer
-	if err := c.ShouldBindJSON(&server); err != nil {
+	var req UploadRegistryEntryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("Error decoding MCP server: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 		return
 	}
 
-	if server.Name == "" {
+	if req.Name == "" {
 		log.Printf("MCP server name is required")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "MCP server name is required"})
 		return
 	}
 
-	if server.ID == "" {
-		server.ID = generateID()
+	if req.ID == "" {
+		req.ID = generateID()
 	}
 
-	if err := h.RegistryManager.UploadRegistryEntries([]*models.MCPServer{&server}); err != nil {
+	if h.crClient != nil {
+		userID := c.GetHeader("X-User-ID")
+		if userID == "" {
+			userID = "default-user"
+		}
+		h.createMCPServerCR(c, &req, userID)
+		return
+	}
+
+	if err := h.RegistryManager.UploadRegistryEntries([]*models.MCPServer{&req.MCPServer}); err != nil {
 		log.Printf("Error uploading MCP server: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	log.Printf("Uploaded MCP server: %s", server.ID)
-	c.JSON(http.StatusCreated, server)
+	log.Printf("Uploaded MCP server: %s", req.ID)
+	c.JSON(http.StatusCreated, req.MCPServer)
 }
 
 // UploadBulkRegistryEntries handles POST /registry/upload/bulk
