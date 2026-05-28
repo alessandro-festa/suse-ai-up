@@ -288,6 +288,8 @@ func main() {
 		PluginServiceManager: pluginServiceManager,
 		UserStore:            userStore,
 		GroupStore:           groupStore,
+		CRClient:             mgr.GetClient(),
+		Namespace:            workloadNamespace,
 	})); err != nil {
 		setupLog.Error(err, "unable to add HTTP server runnable")
 		os.Exit(1)
