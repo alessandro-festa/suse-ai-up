@@ -22,6 +22,7 @@ import (
 	"github.com/SUSE/suse-ai-up/pkg/scanner"
 	"github.com/SUSE/suse-ai-up/pkg/services"
 	adaptersvc "github.com/SUSE/suse-ai-up/pkg/services/adapters"
+	authsvc "github.com/SUSE/suse-ai-up/pkg/services/auth"
 	registryadmin "github.com/SUSE/suse-ai-up/pkg/services/registry/admin"
 	registryloader "github.com/SUSE/suse-ai-up/pkg/services/registry/loader"
 	"github.com/SUSE/suse-ai-up/pkg/session"
@@ -62,20 +63,16 @@ type AppServices struct {
 // SharedStores carries store instances the caller owns and wants the
 // bootstrap layer to reuse instead of constructing fresh ones. Each field
 // is optional; nil means bootstrap falls back to its default (file- or
-// in-memory-backed). P2.4/PR2 added PluginServiceManager so the
-// PluginReconciler and PluginHandler project into and read from the same
-// in-process plugin registry; user/group/assignment unification is
-// deferred to P2.4/PR3, where the handlers move to the auth.* types.
+// in-memory-backed). P2.4/PR2 added PluginServiceManager; P2.4/PR3 added
+// the auth.* projections so HTTP read endpoints (GET /users, /groups)
+// see CR-reconciled state. Writes and Authenticate stay on the local
+// file store — unifying those requires User CR credentialSecretRef
+// support, which is a follow-up post Epic 1.
 type SharedStores struct {
 	MCPServerStore       clients.MCPServerStore
 	PluginServiceManager *plugins.ServiceManager
-}
-
-// Bootstrap wires every component the proxy needs and returns them as a single
-// struct. It is a pure extraction from cmd/uniproxy/main.go's RunUniproxy; no
-// behavior change. Equivalent to BootstrapWithStores with an empty SharedStores.
-func Bootstrap(ctx context.Context, cfg *config.Config) (*AppServices, error) {
-	return BootstrapWithStores(ctx, cfg, SharedStores{})
+	UserStore            authsvc.UserStore
+	GroupStore           authsvc.GroupStore
 }
 
 // BootstrapWithStores wires the proxy with caller-provided stores swapped
@@ -99,8 +96,22 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		log.Fatalf("Failed to create token manager: %v", err)
 	}
 
-	userStore := stores.User
-	groupStore := stores.Group
+	// fileUserStore/fileGroupStore are the legacy in-memory stores used
+	// by UserAuthService (writes + Authenticate). userStore/groupStore
+	// are what UserGroupService sees: layered over the auth.* projection
+	// when the caller supplied it, so reconciled User/Group CRs are
+	// visible to GET /users and GET /groups without touching the
+	// password-aware auth path.
+	fileUserStore := stores.User
+	fileGroupStore := stores.Group
+	var userStore clients.UserStore = fileUserStore
+	if shared.UserStore != nil {
+		userStore = newLayeredUserStore(fileUserStore, shared.UserStore)
+	}
+	var groupStore clients.GroupStore = fileGroupStore
+	if shared.GroupStore != nil {
+		groupStore = newLayeredGroupStore(fileGroupStore, shared.GroupStore)
+	}
 	userGroupService := services.NewUserGroupService(userStore, groupStore)
 
 	userAuthConfig := &models.UserAuthConfig{
@@ -128,7 +139,13 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		},
 	}
 
-	userAuthService := auth.NewUserAuthService(userStore, tokenManager, userAuthConfig)
+	// UserAuthService stays on fileUserStore (not the layered one).
+	// CR-projected RegisteredUser carries no PasswordHash, so wiring
+	// UserAuthService through the projection would either break local
+	// auth or force every login to short-circuit to the file fallback.
+	// Keeping the bare store makes the deferral explicit and unifies
+	// only when the User CR credentialSecretRef story lands.
+	userAuthService := auth.NewUserAuthService(fileUserStore, tokenManager, userAuthConfig)
 
 	log.Printf("DEBUG: CreateInitialGroups: %v, Groups count: %d", cfg.CreateInitialGroups, len(cfg.InitialGroups))
 	if cfg.CreateInitialGroups {
