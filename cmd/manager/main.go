@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -242,6 +243,24 @@ func main() {
 		Store:  assignmentStore,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to set up controller", "controller", "RouteAssignment")
+		os.Exit(1)
+	}
+
+	// PluginReconciler probes registered Plugin CRs and projects them
+	// into the in-process plugin registry. Store is intentionally nil
+	// here — §2.4 (HTTP shim rewire) is responsible for sharing the
+	// pkg/plugins.ServiceManager instance with the data plane; until
+	// then the reconciler probes plugins and keeps Status fresh
+	// without affecting request routing, matching the wiring used for
+	// the agent/route stores when they first landed.
+	if err = (&controllers.PluginReconciler{
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Prober:          controllers.NewProber(nil),
+		Store:           nil,
+		DefaultInterval: 30 * time.Second,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to set up controller", "controller", "Plugin")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
