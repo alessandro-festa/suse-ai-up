@@ -9,25 +9,40 @@ import (
 	"github.com/SUSE/suse-ai-up/pkg/models"
 )
 
-// CreateUserRequest represents a request to create a user
+// CreateUserRequest represents a request to create a user.
+//
+// Password and AuthProvider were added with P2.4f. They are required
+// only in CR mode (and only Password when AuthProvider=local). Existing
+// callers that omit them retain today's behavior on the legacy path.
 type CreateUserRequest struct {
-	ID     string   `json:"id" example:"user123"`
-	Name   string   `json:"name" example:"John Doe"`
-	Email  string   `json:"email" example:"john@example.com"`
-	Groups []string `json:"groups,omitempty" example:"[\"mcp-users\"]"`
+	ID           string   `json:"id" example:"user123"`
+	Name         string   `json:"name" example:"John Doe"`
+	Email        string   `json:"email" example:"john@example.com"`
+	Groups       []string `json:"groups,omitempty" example:"[\"mcp-users\"]"`
+	Password     string   `json:"password,omitempty"`
+	AuthProvider string   `json:"authProvider,omitempty"`
 }
 
-// CreateUserResponse represents the response for user creation
+// CreateUserResponse represents the response for user creation.
+//
+// Status is "active" once UserConditionReady flips True, "provisioning"
+// on poll timeout, or empty on the legacy path. Additive — preserves
+// today's DTO shape.
 type CreateUserResponse struct {
 	User      models.User `json:"user"`
 	CreatedAt time.Time   `json:"createdAt"`
+	Status    string      `json:"status,omitempty"`
 }
 
-// UpdateUserRequest represents a request to update a user
+// UpdateUserRequest represents a request to update a user.
+//
+// Password rotates the credential when non-empty (CR-mode only); empty
+// leaves the existing PasswordSecretRef alone.
 type UpdateUserRequest struct {
-	Name   string   `json:"name,omitempty"`
-	Email  string   `json:"email,omitempty"`
-	Groups []string `json:"groups,omitempty"`
+	Name     string   `json:"name,omitempty"`
+	Email    string   `json:"email,omitempty"`
+	Groups   []string `json:"groups,omitempty"`
+	Password string   `json:"password,omitempty"`
 }
 
 // CreateUser creates a new user
@@ -75,6 +90,11 @@ func (h *UserGroupHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "Insufficient permissions to manage users"})
+		return
+	}
+
+	if h.crClient != nil {
+		h.createUserCR(w, r, &req)
 		return
 	}
 
@@ -213,6 +233,11 @@ func (h *UserGroupHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.crClient != nil {
+		h.updateUserCR(w, r, userID, &req)
+		return
+	}
+
 	// Get existing user
 	user, err := h.userGroupService.GetUser(r.Context(), userID)
 	if err != nil {
@@ -276,6 +301,11 @@ func (h *UserGroupHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "Insufficient permissions to manage users"})
+		return
+	}
+
+	if h.crClient != nil {
+		h.deleteUserCR(w, r, userID)
 		return
 	}
 
