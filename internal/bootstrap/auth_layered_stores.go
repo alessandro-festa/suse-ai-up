@@ -14,35 +14,38 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// P2.4/PR3 — layered user/group stores.
+// P2.4/PR3 — layered user/group stores. Extended in P2.4f with
+// CR-aware local Authenticate.
 //
 // Background. The reconcilers (User, Group, RouteAssignment) project
 // validated CR state into auth.UserStore / auth.GroupStore /
 // auth.AssignmentStore. The HTTP data plane uses clients.UserStore /
 // clients.GroupStore for both CRUD and local-password authentication.
-// The two interfaces are not adaptable end-to-end:
+// Reads merge the projection view on top of the file-backed store, so a
+// `kubectl apply` of a User CR is immediately visible to /api/v1/users.
 //
-//   - clients.UserStore has Authenticate(ctx, id, password); auth's
-//     RegisteredUser has no PasswordHash because CRs don't carry one.
-//   - clients.UserStore is full CRUD over models.User; auth.UserStore is
-//     read-mostly over a narrow projection (no LastLoginAt, no
-//     ProviderGroups, no created/updated timestamps).
-//
-// The layered adapter here closes the gap that IS closable: read endpoints
-// (GET /users, GET /users/:id, ListGroups, etc.) merge the projection
-// view on top of the file-backed store, so a `kubectl apply` of a User
-// CR is immediately visible to /api/v1/users. Writes and Authenticate
-// stay on the file-backed store — HTTP CRUD remains a working write
-// surface; local-auth login continues to work for the bootstrap-seeded
-// admin user. Unifying writes (HTTP POST → User CR) and local auth
-// (User CR → credential Secret reference) is a follow-up issue post
-// Epic 1; that work also lets us delete the file-backed clients stores.
+// P2.4f added a CR client + namespace so Authenticate can also serve
+// CR-created local users: when crClient is set, Authenticate first tries
+// to read the User CR by name in the operator namespace, resolves its
+// PasswordSecretRef, and bcrypt-compares against the stored hash. When
+// the CR isn't present (e.g. the bootstrap-seeded admin still living in
+// the file store), it falls through to s.file.Authenticate so login
+// continues to work for legacy users. Mutations (Create/Update/Delete)
+// continue to go to the file store; HTTP-driven user creation is owned
+// by the CR-mode branch in internal/handlers/user_group_crud.go.
 package bootstrap
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"golang.org/x/crypto/bcrypt"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	mcpv1alpha1 "github.com/SUSE/suse-ai-up/api/v1alpha1"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
 	"github.com/SUSE/suse-ai-up/pkg/models"
 	"github.com/SUSE/suse-ai-up/pkg/services/auth"
@@ -50,14 +53,26 @@ import (
 
 // layeredUserStore satisfies clients.UserStore by reading from the
 // reconciler-populated projection first and falling back to the
-// file-backed store. Mutations and Authenticate go to the file store.
+// file-backed store. Mutations go to the file store. Authenticate prefers
+// the CR-backed credential when crClient is set; otherwise it falls
+// through to the file store (preserves the bootstrap admin login).
 type layeredUserStore struct {
 	file       clients.UserStore
 	projection auth.UserRegistry
+	crClient   client.Client
+	namespace  string
 }
 
 func newLayeredUserStore(file clients.UserStore, projection auth.UserRegistry) *layeredUserStore {
 	return &layeredUserStore{file: file, projection: projection}
+}
+
+// withCRClient enables CR-aware Authenticate. Returns the store for
+// chaining; safe to call once during bootstrap wiring.
+func (s *layeredUserStore) withCRClient(c client.Client, namespace string) *layeredUserStore {
+	s.crClient = c
+	s.namespace = namespace
+	return s
 }
 
 func (s *layeredUserStore) Get(ctx context.Context, id string) (*models.User, error) {
@@ -117,8 +132,96 @@ func (s *layeredUserStore) GetByExternalID(ctx context.Context, provider, extern
 	return s.file.GetByExternalID(ctx, provider, externalID)
 }
 
+// Authenticate verifies password against a CR-backed credential when
+// available, else falls through to the file store. The CR path reads the
+// User CR directly from the operator namespace (bypassing the projection,
+// whose keys are "<namespace>/<name>" while HTTP supplies bare IDs),
+// resolves Spec.PasswordSecretRef, and bcrypt-compares.
+//
+// Errors are intentionally vague ("invalid credentials") to avoid leaking
+// account-existence to a probing caller — only the AuthProvider-mismatch
+// case names the provider, because federated users genuinely need a
+// different login flow.
 func (s *layeredUserStore) Authenticate(ctx context.Context, id, password string) (*models.User, error) {
-	return s.file.Authenticate(ctx, id, password)
+	if s.crClient == nil {
+		return s.file.Authenticate(ctx, id, password)
+	}
+
+	var cr mcpv1alpha1.User
+	err := s.crClient.Get(ctx, client.ObjectKey{Namespace: s.namespace, Name: id}, &cr)
+	switch {
+	case apierrors.IsNotFound(err):
+		// No CR for this id — fall through so the bootstrap-seeded admin
+		// (file store only) can still log in.
+		return s.file.Authenticate(ctx, id, password)
+	case err != nil:
+		return nil, fmt.Errorf("fetch User CR: %w", err)
+	}
+
+	provider := cr.Spec.AuthProvider
+	if provider == "" {
+		provider = mcpv1alpha1.UserAuthProviderLocal
+	}
+	if provider != mcpv1alpha1.UserAuthProviderLocal {
+		return nil, fmt.Errorf("user uses %s authentication; local password not accepted", provider)
+	}
+	if cr.Spec.PasswordSecretRef == nil || cr.Spec.PasswordSecretRef.Name == "" {
+		return nil, fmt.Errorf("invalid credentials")
+	}
+
+	var secret corev1.Secret
+	if err := s.crClient.Get(ctx, client.ObjectKey{Namespace: s.namespace, Name: cr.Spec.PasswordSecretRef.Name}, &secret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("invalid credentials")
+		}
+		return nil, fmt.Errorf("fetch password secret: %w", err)
+	}
+	key := cr.Spec.PasswordSecretRef.Key
+	if key == "" {
+		key = "password"
+	}
+	hash, ok := secret.Data[key]
+	if !ok || len(hash) == 0 {
+		return nil, fmt.Errorf("invalid credentials")
+	}
+	if err := bcrypt.CompareHashAndPassword(hash, []byte(password)); err != nil {
+		return nil, fmt.Errorf("invalid credentials")
+	}
+
+	registered := crUserToRegistered(&cr)
+	user := registeredUserToModel(registered)
+	return user, nil
+}
+
+// crUserToRegistered mirrors controllers.toRegisteredUser but is local
+// to the layered store so we don't pull in the controllers package
+// (which would create an import cycle through bootstrap).
+func crUserToRegistered(u *mcpv1alpha1.User) *auth.RegisteredUser {
+	groups := make([]string, 0, len(u.Spec.Groups))
+	for _, ref := range u.Spec.Groups {
+		if ref.Name != "" {
+			groups = append(groups, ref.Name)
+		}
+	}
+	provider := u.Spec.AuthProvider
+	if provider == "" {
+		provider = mcpv1alpha1.UserAuthProviderLocal
+	}
+	// HTTP layer uses bare IDs throughout, so we keep ID=u.Name here
+	// (the projection keyed by namespaced ID isn't relevant to the auth
+	// caller — userAuthService.AuthenticateUser uses what Authenticate
+	// returns to call Update for LastLoginAt, both of which match on
+	// models.User.ID alone).
+	return &auth.RegisteredUser{
+		ID:           u.Name,
+		Namespace:    u.Namespace,
+		Name:         u.Name,
+		DisplayName:  u.Spec.DisplayName,
+		Email:        u.Spec.Email,
+		AuthProvider: provider,
+		ExternalID:   u.Spec.ExternalID,
+		Groups:       groups,
+	}
 }
 
 func (s *layeredUserStore) Watch(ctx context.Context) (<-chan clients.StoreEvent, error) {

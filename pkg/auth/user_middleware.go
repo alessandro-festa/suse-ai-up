@@ -30,10 +30,10 @@ func NewUserAuthService(userStore clients.UserStore, tokenManager *TokenManager,
 	}
 }
 
-// HashPassword hashes a password using bcrypt
+// HashPassword hashes a password using bcrypt. Wraps the free function
+// in pkg/auth/password.go for callers that already hold a UserAuthService.
 func (uas *UserAuthService) HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(bytes), err
+	return HashPassword(password)
 }
 
 // ValidatePassword checks if a password matches the hash

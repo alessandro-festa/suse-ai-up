@@ -116,17 +116,25 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		log.Fatalf("Failed to create token manager: %v", err)
 	}
 
-	// fileUserStore/fileGroupStore are the legacy in-memory stores used
-	// by UserAuthService (writes + Authenticate). userStore/groupStore
-	// are what UserGroupService sees: layered over the auth.* projection
-	// when the caller supplied it, so reconciled User/Group CRs are
-	// visible to GET /users and GET /groups without touching the
-	// password-aware auth path.
+	// fileUserStore/fileGroupStore are the legacy in-memory stores. They
+	// retain ownership of the bootstrap-seeded admin user and any users
+	// created before P2.4f's CR-mode wiring.
+	//
+	// userStore is the layered view: reads merge the reconciler
+	// projection (visible to GET /users) and, when CR client is wired,
+	// Authenticate prefers User CR + PasswordSecretRef Secret (CR-created
+	// users can now log in). Mutations still go to the file store; the
+	// CR-mode write-through lives in handlers/user_group_crud.go and
+	// bypasses this layer entirely.
 	fileUserStore := stores.User
 	fileGroupStore := stores.Group
 	var userStore clients.UserStore = fileUserStore
 	if shared.UserStore != nil {
-		userStore = newLayeredUserStore(fileUserStore, shared.UserStore)
+		layered := newLayeredUserStore(fileUserStore, shared.UserStore)
+		if shared.CRClient != nil {
+			layered = layered.withCRClient(shared.CRClient, shared.Namespace)
+		}
+		userStore = layered
 	}
 	var groupStore clients.GroupStore = fileGroupStore
 	if shared.GroupStore != nil {
@@ -159,13 +167,12 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		},
 	}
 
-	// UserAuthService stays on fileUserStore (not the layered one).
-	// CR-projected RegisteredUser carries no PasswordHash, so wiring
-	// UserAuthService through the projection would either break local
-	// auth or force every login to short-circuit to the file fallback.
-	// Keeping the bare store makes the deferral explicit and unifies
-	// only when the User CR credentialSecretRef story lands.
-	userAuthService := auth.NewUserAuthService(fileUserStore, tokenManager, userAuthConfig)
+	// UserAuthService runs through the layered store so CR-projected
+	// users can authenticate via their PasswordSecretRef Secret. The
+	// layered store falls through to fileUserStore when the CR is absent
+	// (preserves bootstrap admin login and any pre-P2.4f users still
+	// living in the file store).
+	userAuthService := auth.NewUserAuthService(userStore, tokenManager, userAuthConfig)
 
 	log.Printf("DEBUG: CreateInitialGroups: %v, Groups count: %d", cfg.CreateInitialGroups, len(cfg.InitialGroups))
 	if cfg.CreateInitialGroups {
@@ -304,6 +311,9 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 	registryHandler := handlers.NewRegistryHandler(registryStore, registryManager, adapterStore, userGroupService, cfg, k8sClient, registryAdminSvc)
 
 	userGroupHandler := handlers.NewUserGroupHandler(userGroupService)
+	if shared.CRClient != nil {
+		userGroupHandler = userGroupHandler.WithCRClient(shared.CRClient, shared.Namespace)
+	}
 	authHandler := handlers.NewAuthHandler(userAuthService)
 	routeAssignmentHandler := handlers.NewRouteAssignmentHandler(userGroupService, registryStore)
 	logging.ProxyLogger.Info("UserGroupHandler created: %v", userGroupHandler != nil)

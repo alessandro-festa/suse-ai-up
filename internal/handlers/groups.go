@@ -17,10 +17,15 @@ type CreateGroupRequest struct {
 	Permissions []string `json:"permissions,omitempty" example:"[\"server:weather-*\"]"`
 }
 
-// CreateGroupResponse represents the response for group creation
+// CreateGroupResponse represents the response for group creation.
+//
+// Status is "ready" once GroupConditionReady is True (empty Members
+// reaches Ready immediately), "provisioning" on poll timeout, or empty
+// on the legacy path. Additive — preserves today's DTO shape.
 type CreateGroupResponse struct {
 	Group     models.Group `json:"group"`
 	CreatedAt time.Time    `json:"createdAt"`
+	Status    string       `json:"status,omitempty"`
 }
 
 // UpdateGroupRequest represents a request to update a group
@@ -75,6 +80,11 @@ func (h *UserGroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "Insufficient permissions to manage groups"})
+		return
+	}
+
+	if h.crClient != nil {
+		h.createGroupCR(w, r, &req)
 		return
 	}
 
@@ -213,6 +223,11 @@ func (h *UserGroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.crClient != nil {
+		h.updateGroupCR(w, r, groupID, &req)
+		return
+	}
+
 	// Get existing group
 	group, err := h.userGroupService.GetGroup(r.Context(), groupID)
 	if err != nil {
@@ -276,6 +291,11 @@ func (h *UserGroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "Insufficient permissions to manage groups"})
+		return
+	}
+
+	if h.crClient != nil {
+		h.deleteGroupCR(w, r, groupID)
 		return
 	}
 
