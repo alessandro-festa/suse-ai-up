@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/SUSE/suse-ai-up/internal/config"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
@@ -47,7 +48,13 @@ type MCPServerStore interface {
 	ListMCPServers() []*models.MCPServer
 }
 
-// RegistryHandler handles MCP server registry operations
+// RegistryHandler handles MCP server registry operations.
+//
+// crClient + namespace are the P2.4g write-through wiring. When both are
+// set, Upload/Update/Delete project requests onto MCPServer CRs and let
+// MCPServerReconciler reflect them back into Store. When unset, the
+// handler falls back to Store / RegistryManager / AdminService for
+// backwards compatibility.
 type RegistryHandler struct {
 	Store            MCPServerStore
 	RegistryManager  RegistryManagerInterface
@@ -57,9 +64,13 @@ type RegistryHandler struct {
 	Config           *config.Config
 	K8sClient        kubernetes.Interface
 	AdminService     *registryadmin.Service
+
+	crClient  client.Client
+	namespace string
 }
 
-// NewRegistryHandler creates a new registry handler
+// NewRegistryHandler creates a new registry handler. Use WithCRClient to
+// enable CR-backed write-through (P2.4g).
 func NewRegistryHandler(store MCPServerStore, registryManager RegistryManagerInterface, adapterStore clients.AdapterResourceStore, userGroupService *services.UserGroupService, cfg *config.Config, k8sClient kubernetes.Interface, adminService *registryadmin.Service) *RegistryHandler {
 	return &RegistryHandler{
 		Store:            store,
@@ -71,6 +82,16 @@ func NewRegistryHandler(store MCPServerStore, registryManager RegistryManagerInt
 		K8sClient:        k8sClient,
 		AdminService:     adminService,
 	}
+}
+
+// WithCRClient enables CR-backed write-through for upload/update/delete.
+// When set, those handlers project requests onto MCPServer CRs and poll
+// Status.Conditions[Ready] before responding. Returns the handler for
+// chaining.
+func (h *RegistryHandler) WithCRClient(c client.Client, namespace string) *RegistryHandler {
+	h.crClient = c
+	h.namespace = namespace
+	return h
 }
 
 // DetectServerType determines the type of MCP server from registry metadata and package information
@@ -141,19 +162,23 @@ func (h *RegistryHandler) GetMCPServer(c *gin.Context) {
 // @Router /api/v1/registry/{id} [put]
 func (h *RegistryHandler) UpdateMCPServer(c *gin.Context) {
 	id := c.Param("id")
-	var updated models.MCPServer
-	if err := c.ShouldBindJSON(&updated); err != nil {
+	var req UploadRegistryEntryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("Error decoding MCP server update: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.Store.UpdateMCPServer(id, &updated); err != nil {
+	if h.crClient != nil {
+		h.updateMCPServerCR(c, id, &req)
+		return
+	}
+	if err := h.Store.UpdateMCPServer(id, &req.MCPServer); err != nil {
 		log.Printf("Error updating MCP server: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
 	log.Printf("Updated MCP server: %s", id)
-	c.JSON(http.StatusOK, updated)
+	c.JSON(http.StatusOK, req.MCPServer)
 }
 
 // DeleteMCPServer handles DELETE /registry/{id}
@@ -166,6 +191,10 @@ func (h *RegistryHandler) UpdateMCPServer(c *gin.Context) {
 // @Router /api/v1/registry/{id} [delete]
 func (h *RegistryHandler) DeleteMCPServer(c *gin.Context) {
 	id := c.Param("id")
+	if h.crClient != nil {
+		h.deleteMCPServerCR(c, id)
+		return
+	}
 	if err := h.Store.DeleteMCPServer(id); err != nil {
 		log.Printf("Error deleting MCP server: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
