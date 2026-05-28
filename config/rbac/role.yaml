@@ -51,6 +51,7 @@ rules:
   - agents
   - groups
   - mcpregistries
+  - plugins
   - routeassignments
   - users
   - virtualmcproutes
@@ -68,6 +69,7 @@ rules:
   - groups/finalizers
   - mcpregistries/finalizers
   - mcpservers/finalizers
+  - plugins/finalizers
   - routeassignments/finalizers
   - users/finalizers
   - virtualmcproutes/finalizers
@@ -81,6 +83,7 @@ rules:
   - groups/status
   - mcpregistries/status
   - mcpservers/status
+  - plugins/status
   - routeassignments/status
   - users/status
   - virtualmcproutes/status
