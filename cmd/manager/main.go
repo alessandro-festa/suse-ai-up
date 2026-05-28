@@ -278,13 +278,16 @@ func main() {
 
 	// HTTP server (formerly cmd/uniproxy) runs inside the operator
 	// process so handlers and reconcilers share the same in-process
-	// state. P2.4/PR1 wired MCPServerStore; PR2 adds the
-	// PluginServiceManager so PluginReconciler projections are visible
-	// to /api/v1/plugins/*. User/group/assignment stores get unified
-	// in PR3, after the handlers are rewired to the auth.* types.
+	// state. P2.4/PR1 wired MCPServerStore; PR2 added
+	// PluginServiceManager; PR3 plumbs the user/group auth projections
+	// so GET /api/v1/users and /api/v1/groups surface CR-reconciled
+	// entries. RouteAssignment store stays manager-internal — no HTTP
+	// route reads it today (handler resolves via UserGroupService).
 	if err := mgr.Add(httpserver.NewRunnable(httpCfg, bootstrap.SharedStores{
 		MCPServerStore:       mcpServerStore,
 		PluginServiceManager: pluginServiceManager,
+		UserStore:            userStore,
+		GroupStore:           groupStore,
 	})); err != nil {
 		setupLog.Error(err, "unable to add HTTP server runnable")
 		os.Exit(1)
