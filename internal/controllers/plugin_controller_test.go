@@ -101,8 +101,8 @@ func TestPluginToRegistration_UsesObservedCapsWhenPresent(t *testing.T) {
 		{Path: "/observed", Methods: []string{"GET", "POST"}, Description: "discovered"},
 	}
 	reg := pluginToRegistration(plugin, observed, &now)
-	if reg.ServiceID != "ns/p" {
-		t.Errorf("ServiceID = %q, want ns/p", reg.ServiceID)
+	if reg.ServiceID != "p" {
+		t.Errorf("ServiceID = %q, want p", reg.ServiceID)
 	}
 	if reg.ServiceType != plugins.ServiceTypeVirtualMCP {
 		t.Errorf("ServiceType = %q, want virtualmcp", reg.ServiceType)
@@ -328,8 +328,8 @@ func TestReflectToStore_HealthyRegistersAndMarksHealthy(t *testing.T) {
 	if len(store.registered) != 1 {
 		t.Fatalf("expected 1 registration, got %d", len(store.registered))
 	}
-	if store.registered[0].ServiceID != "ns/p" {
-		t.Errorf("ServiceID = %q", store.registered[0].ServiceID)
+	if store.registered[0].ServiceID != "p" {
+		t.Errorf("ServiceID = %q, want p", store.registered[0].ServiceID)
 	}
 	if len(store.healthUpdate) != 1 || store.healthUpdate[0].Status != "healthy" {
 		t.Errorf("expected healthy update, got %+v", store.healthUpdate)
@@ -378,5 +378,15 @@ func TestProberSelector_HonorsInjected(t *testing.T) {
 	r := &PluginReconciler{Prober: fake}
 	if r.prober() != fake {
 		t.Error("expected injected prober to be returned")
+	}
+}
+
+// TestPluginStoreID_DropsNamespacePrefix locks the contract the HTTP
+// write-through path (P2.4e) depends on: ServiceManager keys must match
+// the raw service_id callers POST to /api/v1/plugins/register, so the
+// store ID is just the CR name — no namespace prefix.
+func TestPluginStoreID_DropsNamespacePrefix(t *testing.T) {
+	if got := pluginStoreID("any-namespace", "myplugin"); got != "myplugin" {
+		t.Errorf("pluginStoreID = %q, want \"myplugin\" (HTTP read-path lookup-by-id depends on this)", got)
 	}
 }
