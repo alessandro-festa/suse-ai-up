@@ -159,7 +159,46 @@
           ></textarea>
         </details>
 
+        <div class="ai-up-fieldset">
+          <div class="ai-up-fieldset__legend">Access control <span class="ai-up-fieldset__optional">(optional)</span></div>
+          <p class="ai-up-muted">
+            Restrict who can invoke this adapter through the proxy. Leave both lists empty for
+            the default (no ACL).
+          </p>
+          <label class="ai-up-field">
+            <span>Users</span>
+            <AiUpPickerList
+              :items="userPickerItems"
+              :selected="acl.userIds"
+              empty-label="No users defined. Create them on Settings → Users."
+              search-placeholder="Filter users..."
+              @update:selected="acl.userIds = $event"
+            />
+          </label>
+          <label class="ai-up-field">
+            <span>Groups</span>
+            <AiUpPickerList
+              :items="groupPickerItems"
+              :selected="acl.groupIds"
+              empty-label="No groups defined. Create them on Settings → Groups."
+              search-placeholder="Filter groups..."
+              @update:selected="acl.groupIds = $event"
+            />
+          </label>
+          <div class="acl-row">
+            <span class="acl-row__label">Permission</span>
+            <label class="acl-radio"><input type="radio" value="read"  v-model="acl.permissions" /> read</label>
+            <label class="acl-radio"><input type="radio" value="write" v-model="acl.permissions" /> write</label>
+            <label class="acl-radio"><input type="radio" value="admin" v-model="acl.permissions" /> admin</label>
+          </div>
+          <label class="acl-row">
+            <input type="checkbox" v-model="acl.autoSpawn" />
+            <span>Auto-spawn the adapter on first matched request</span>
+          </label>
+        </div>
+
         <div v-if="createError" class="ai-up-banner ai-up-banner--error">{{ createError }}</div>
+        <div v-if="aclWarning" class="ai-up-banner ai-up-banner--warning">{{ aclWarning }}</div>
       </template>
 
       <template #actions>
@@ -187,8 +226,11 @@ import AiUpGallery from '../components/AiUpGallery.vue';
 import AiUpCard from '../components/AiUpCard.vue';
 import AiUpPill from '../components/AiUpPill.vue';
 import AiUpModal from '../components/AiUpModal.vue';
+import AiUpPickerList from '../components/AiUpPickerList.vue';
 import { adaptersApi, Adapter } from '../services/adapters';
 import { registryApi } from '../services/registry';
+import { usersApi } from '../services/users';
+import { groupsApi } from '../services/groups';
 import { toRegistryView, matchesQuery, RegistryView } from '../services/registry-view';
 
 interface ListAdapter extends Adapter {
@@ -213,7 +255,7 @@ function parseEnvText(text: string): Record<string, string> {
 
 export default defineComponent({
   name:       'MCPGateway',
-  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpCard, AiUpPill, AiUpModal },
+  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpCard, AiUpPill, AiUpModal, AiUpPickerList },
   setup() {
     const adapters       = ref<ListAdapter[]>([]);
     const registryViews  = ref<RegistryView[]>([]);
@@ -225,12 +267,18 @@ export default defineComponent({
     const creating       = ref(false);
     const submitting     = ref(false);
     const createError    = ref<string | null>(null);
+    const aclWarning     = ref<string | null>(null);
     const selected       = ref<RegistryView | null>(null);
     const pickSearch     = ref('');
     const form           = ref({ name: '', description: '' });
     const vars           = reactive<Record<string, string>>({});
     const envText        = ref('');
     const brokenIcons    = reactive<Record<string, boolean>>({});
+    const acl            = reactive<{ userIds: string[]; groupIds: string[]; permissions: 'read'|'write'|'admin'; autoSpawn: boolean }>({
+      userIds: [], groupIds: [], permissions: 'read', autoSpawn: false,
+    });
+    const userPickerItems  = ref<{ id: string; label: string; sublabel?: string }[]>([]);
+    const groupPickerItems = ref<{ id: string; label: string; sublabel?: string }[]>([]);
 
     const filtered = computed(() => {
       const q = search.value.trim().toLowerCase();
@@ -283,15 +331,32 @@ export default defineComponent({
       }
     }
 
+    async function loadUsersAndGroups() {
+      try {
+        const u = (await usersApi.list()) || [];
+        userPickerItems.value = u.map((x) => ({ id: x.id, label: x.name || x.id, sublabel: x.email }));
+      } catch { userPickerItems.value = []; }
+      try {
+        const g = (await groupsApi.list()) || [];
+        groupPickerItems.value = g.map((x) => ({
+          id: x.id, label: x.name || x.id,
+          sublabel: `${ x.members?.length || 0 } members`,
+        }));
+      } catch { groupPickerItems.value = []; }
+    }
+
     function openCreate() {
       selected.value    = null;
       pickSearch.value  = '';
       form.value        = { name: '', description: '' };
       envText.value     = '';
       createError.value = null;
+      aclWarning.value  = null;
+      acl.userIds = []; acl.groupIds = []; acl.permissions = 'read'; acl.autoSpawn = false;
       for (const k of Object.keys(vars)) delete vars[k];
       creating.value    = true;
       loadRegistry();
+      loadUsersAndGroups();
     }
 
     function closeCreate() {
@@ -328,6 +393,7 @@ export default defineComponent({
       if (!selected.value) return;
       submitting.value  = true;
       createError.value = null;
+      aclWarning.value  = null;
       // Build env vars: secret-derived first, additional env text overrides.
       const env: Record<string, string> = {};
       for (const s of selected.value.secrets) {
@@ -342,6 +408,24 @@ export default defineComponent({
           description:          form.value.description.trim() || undefined,
           environmentVariables: env,
         } as any);
+        // ACL is a follow-up call against the MCP server (RouteAssignment).
+        // Non-fatal: failure leaves the adapter intact and surfaces a banner
+        // so the user can retry from a future Access tab on the detail view.
+        if (acl.userIds.length || acl.groupIds.length) {
+          try {
+            await registryApi.createRouteAssignment(selected.value.id, {
+              userIds:     acl.userIds,
+              groupIds:    acl.groupIds,
+              permissions: acl.permissions,
+              autoSpawn:   acl.autoSpawn,
+            });
+          } catch (e: any) {
+            aclWarning.value = `Adapter created, but access control did not apply: ${ e?.data?.error || e?.message || 'unknown error' }`;
+            await refresh();
+            submitting.value = false;
+            return;
+          }
+        }
         closeCreate();
         await refresh();
       } catch (e: any) {
@@ -368,7 +452,8 @@ export default defineComponent({
 
     return {
       adapters, registryViews, loadingRegistry, search, loading, error, deleting,
-      creating, submitting, createError, selected, pickSearch, form, vars, envText,
+      creating, submitting, createError, aclWarning, selected, pickSearch, form, vars, envText,
+      acl, userPickerItems, groupPickerItems,
       brokenIcons,
       filtered, pickFiltered, modalTitle, canCreate,
       statusTone,
@@ -437,6 +522,34 @@ export default defineComponent({
   font-weight: 600;
   color:       var(--body-text, #333);
   margin-bottom: 2px;
+}
+.ai-up-fieldset__optional {
+  font-weight: 400;
+  color:       var(--muted, #888);
+  margin-left: 4px;
+}
+.acl-row {
+  display:     flex;
+  align-items: center;
+  gap:         12px;
+  flex-wrap:   wrap;
+  font-size:   12px;
+  color:       var(--body-text, #333);
+}
+.acl-row__label {
+  color:       var(--muted, #888);
+  font-size:   12px;
+}
+.acl-radio {
+  display:     inline-flex;
+  align-items: center;
+  gap:         4px;
+}
+.acl-radio input { width: 14px; height: 14px; }
+.ai-up-banner--warning {
+  background: var(--warning-banner-bg, rgba(244, 161, 41, 0.12));
+  color:      var(--warning, #f4a129);
+  border:     1px solid var(--warning, #f4a129);
 }
 .ai-up-details summary {
   cursor:    pointer;
