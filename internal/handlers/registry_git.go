@@ -57,6 +57,13 @@ type GitRegistryUploadRequest struct {
 	// Path is only used when URL points at a github.com repo root.
 	// Example: "hack/registry/mcp_registry.yaml".
 	Path string `json:"path,omitempty"`
+
+	// OnConflict controls per-entry behavior when an MCPServer with the
+	// same ID already exists. abort (default) → 409 with conflicts list;
+	// skip → leave existing alone, count as skipped; overwrite → Update
+	// the existing CR's Spec from the request. See ConflictMode in
+	// registry_crud.go.
+	OnConflict string `json:"onConflict,omitempty"`
 }
 
 // UploadGitRegistryFile handles POST /api/v1/registry/upload/git.
@@ -117,7 +124,7 @@ func (h *RegistryHandler) UploadGitRegistryFile(c *gin.Context) {
 		userID = "default-user"
 	}
 
-	h.createBulkMCPServerCR(c, reqs, userID)
+	h.createBulkMCPServerCR(c, reqs, userID, NormalizeConflictMode(req.OnConflict))
 }
 
 // fetchGitYAML chooses a fetch strategy based on the URL host so private
