@@ -59,12 +59,18 @@ docker-run: docker-build ## Build and run the consolidated docker image.
 
 ##@ Helm
 
+.PHONY: helm-sync-crds
+helm-sync-crds: manifests kustomize ## Regenerate charts/suse-ai-up/crds/crds.yaml from config/crd/.
+	@mkdir -p charts/suse-ai-up/crds
+	$(KUSTOMIZE) build config/crd > charts/suse-ai-up/crds/crds.yaml
+	@echo "Wrote charts/suse-ai-up/crds/crds.yaml ($$(grep -c '^kind: CustomResourceDefinition' charts/suse-ai-up/crds/crds.yaml) CRDs)."
+
 .PHONY: helm-install
-helm-install: ## Install the suse-ai-up helm chart.
+helm-install: helm-sync-crds ## Install the suse-ai-up helm chart (CRDs bundled via charts/suse-ai-up/crds/).
 	helm install suse-ai-up ./charts/suse-ai-up --namespace suse-ai-up --create-namespace
 
 .PHONY: helm-upgrade
-helm-upgrade: ## Upgrade the suse-ai-up helm chart.
+helm-upgrade: helm-sync-crds ## Upgrade the suse-ai-up helm chart. NOTE: Helm does not re-apply CRDs on upgrade — see charts/suse-ai-up/README.md.
 	helm upgrade suse-ai-up ./charts/suse-ai-up --namespace suse-ai-up
 
 .PHONY: helm-test
