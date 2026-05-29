@@ -17,4 +17,5 @@ export default function(plugin: IPlugin): void {
 
   plugin.addProduct(productModule as any);
   plugin.addRoutes(routes);
+  plugin.addL10n('en-us', require('./l10n/en-us.yaml'));
 }
