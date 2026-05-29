@@ -162,7 +162,7 @@ func TestLayeredGroupStore_ProjectionOverlay(t *testing.T) {
 		t.Fatalf("seed projection: %v", err)
 	}
 
-	layered := newLayeredGroupStore(file, projection)
+	layered := newLayeredGroupStore(file, projection, nil)
 	list, err := layered.List(ctx)
 	if err != nil {
 		t.Fatalf("List: %v", err)
