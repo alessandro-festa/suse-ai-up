@@ -21,6 +21,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -393,4 +394,62 @@ func resolvePriority(p *int32) (int32, bool) {
 		return 0, false
 	}
 	return *p, true
+}
+
+// createBulkMCPServerCR is the CR-backed write path for
+// POST /api/v1/registry/upload/bulk. All-or-nothing: every successful
+// Create is appended to `created`; on any subsequent failure we walk
+// `created` in reverse and Delete each (best-effort — secondary errors
+// are logged but not surfaced, since the caller already has a primary
+// cause). No readiness polling — bulk could be 100+ entries and per-
+// entry polling would block the request for minutes.
+func (h *RegistryHandler) createBulkMCPServerCR(c *gin.Context, reqs []UploadRegistryEntryRequest, userID string) {
+	ctx := c.Request.Context()
+	created := make([]*mcpv1alpha1.MCPServer, 0, len(reqs))
+
+	for i := range reqs {
+		req := &reqs[i]
+		priority, _ := resolvePriority(req.Priority) // already validated by caller
+
+		cr := mcpServerRequestToCR(req, h.namespace, userID)
+		if err := h.crClient.Create(ctx, cr); err != nil {
+			h.rollbackBulkCreates(ctx, created)
+			if apierrors.IsAlreadyExists(err) {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": fmt.Sprintf("MCPServer %q already exists (index %d); bulk upload rolled back", req.ID, i),
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to create MCPServer %q (index %d): %v; bulk upload rolled back", req.ID, i, err),
+			})
+			return
+		}
+		created = append(created, cr)
+
+		if err := h.setMCPServerPriorityWithRetry(ctx, cr, priority); err != nil {
+			h.rollbackBulkCreates(ctx, created)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("Failed to set priority on MCPServer %q (index %d): %v; bulk upload rolled back", req.ID, i, err),
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": fmt.Sprintf("Successfully uploaded %d MCP servers", len(reqs)),
+		"count":   len(reqs),
+	})
+}
+
+// rollbackBulkCreates deletes each entry in `created` in reverse order.
+// IsNotFound races are silent; other errors are logged but not returned
+// so the caller's primary error stays the surfaced cause.
+func (h *RegistryHandler) rollbackBulkCreates(ctx context.Context, created []*mcpv1alpha1.MCPServer) {
+	for i := len(created) - 1; i >= 0; i-- {
+		cr := created[i]
+		if err := h.crClient.Delete(ctx, cr); err != nil && !apierrors.IsNotFound(err) {
+			log.Printf("bulk rollback: failed to delete MCPServer %q: %v", cr.Name, err)
+		}
+	}
 }
