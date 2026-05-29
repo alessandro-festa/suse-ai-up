@@ -26,7 +26,13 @@ function buildClient(): AxiosInstance {
       const token = window.localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
       if (token) {
         cfg.headers = cfg.headers || {};
-        (cfg.headers as Record<string, string>)['Authorization'] = `Bearer ${ token }`;
+        // Send via X-Api-Token, NOT Authorization. When the dashboard
+        // proxies through `/k8s/clusters/<id>/.../proxy/`, Rancher
+        // validates the standard Authorization header against its own
+        // user store and rejects any non-Rancher Bearer JWT with 401
+        // before the request even reaches our backend. Our middleware
+        // (pkg/auth/user_middleware.go) accepts either header.
+        (cfg.headers as Record<string, string>)['X-Api-Token'] = token;
       }
     } catch {
       /* ignore */

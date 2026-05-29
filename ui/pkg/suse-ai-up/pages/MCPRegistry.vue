@@ -688,8 +688,11 @@ export default defineComponent({
   color:         var(--muted, #888);
 }
 .chip--warning {
+  // Darker amber for WCAG AA on the pale warning bg — same color we use
+  // in AiUpPill's warning tone.
   background: var(--warning-banner-bg, rgba(244, 161, 41, 0.15));
-  color:      var(--warning, #f4a129);
+  color:      #8a5a07;
+  border:     1px solid rgba(138, 90, 7, 0.25);
 }
 .ai-up-field {
   display:        flex;
