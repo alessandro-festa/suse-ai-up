@@ -18,13 +18,21 @@ export const PAGE_TYPES = {
 
 export type PageType = typeof PAGE_TYPES[keyof typeof PAGE_TYPES];
 
+// Route names are PRODUCT-prefixed (NOT `c-cluster-<product>-…`).
+// Rancher's getProductFromRoute() regex (@rancher/shell utils/router.js)
+// extracts the product slug from route names matching `^c-cluster-([^-]+)`,
+// which captures only the first non-dash segment. With a dashed slug like
+// `suse-ai-up`, the regex captures `suse` and Rancher errors with
+// "Product suse not found". Putting the slug at the front makes the regex
+// miss entirely so the lookup falls through to `meta.product`, which we
+// set explicitly on every route. AIF uses the same pattern.
 export const ROUTE_NAMES = {
-  HOME:         `c-cluster-${PRODUCT}-${PAGE_TYPES.HOME}`,
-  MCP_GATEWAY:  `c-cluster-${PRODUCT}-${PAGE_TYPES.MCP_GATEWAY}`,
-  MCP_REGISTRY: `c-cluster-${PRODUCT}-${PAGE_TYPES.MCP_REGISTRY}`,
-  VIRTUAL_MCP:  `c-cluster-${PRODUCT}-${PAGE_TYPES.VIRTUAL_MCP}`,
-  SMART_AGENTS: `c-cluster-${PRODUCT}-${PAGE_TYPES.SMART_AGENTS}`,
-  SETTINGS:     `c-cluster-${PRODUCT}-${PAGE_TYPES.SETTINGS}`,
+  HOME:         `${PRODUCT}-c-cluster-${PAGE_TYPES.HOME}`,
+  MCP_GATEWAY:  `${PRODUCT}-c-cluster-${PAGE_TYPES.MCP_GATEWAY}`,
+  MCP_REGISTRY: `${PRODUCT}-c-cluster-${PAGE_TYPES.MCP_REGISTRY}`,
+  VIRTUAL_MCP:  `${PRODUCT}-c-cluster-${PAGE_TYPES.VIRTUAL_MCP}`,
+  SMART_AGENTS: `${PRODUCT}-c-cluster-${PAGE_TYPES.SMART_AGENTS}`,
+  SETTINGS:     `${PRODUCT}-c-cluster-${PAGE_TYPES.SETTINGS}`,
 } as const;
 
 // Display + nav metadata for each page. Weights drive ordering in the

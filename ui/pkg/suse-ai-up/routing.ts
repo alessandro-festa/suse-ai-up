@@ -2,7 +2,7 @@ import { PRODUCT, PAGE_TYPES, ROUTE_NAMES } from './config/product';
 
 export default [
   {
-    name:     `c-cluster-${PRODUCT}-root`,
+    name:     `${PRODUCT}-c-cluster-root`,
     path:     `/c/:cluster/${PRODUCT}`,
     redirect: { name: ROUTE_NAMES.HOME },
     meta:     { product: PRODUCT },
