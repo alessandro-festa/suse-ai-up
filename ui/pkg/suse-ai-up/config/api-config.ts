@@ -27,10 +27,15 @@ export interface ServiceLocation {
   port:      number;
 }
 
+// Matches the Helm chart at charts/suse-ai-up/ when installed via
+// `make helm-install`: namespace `suse-ai-up`, Service named
+// `suse-ai-up-service` (template `{release}-service` in
+// charts/suse-ai-up/templates/_helpers.tpl), proxy port 8911 from
+// values.yaml `services.proxy.port`.
 export const DEFAULT_SERVICE_LOCATION: ServiceLocation = {
   cluster:   'local',
   namespace: 'suse-ai-up',
-  name:      'suse-ai-up',
+  name:      'suse-ai-up-service',
   port:      8911,
 };
 
