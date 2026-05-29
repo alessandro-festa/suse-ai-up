@@ -42,17 +42,20 @@ export const DEFAULT_SERVICE_LOCATION: ServiceLocation = {
 export const API_BASE = '/api/v1';
 
 // Endpoint paths (relative to the resolved base URL).
+// `/health` and `/auth/mode` are served at the root by Gin (see
+// internal/router/router.go); everything else lives under `/api/v1/`.
 export const ENDPOINTS = {
-  HEALTH:    '/health',
-  AUTH_MODE: '/auth/mode',
-  AUTH_LOGIN:  '/auth/login',
-  AUTH_LOGOUT: '/auth/logout',
-  ADAPTERS:  `${ API_BASE }/adapters`,
-  REGISTRY:  `${ API_BASE }/registry`,
-  USERS:     `${ API_BASE }/users`,
-  GROUPS:    `${ API_BASE }/groups`,
-  PLUGINS:   `${ API_BASE }/plugins`,
-  DISCOVERY: `${ API_BASE }/discovery`,
+  HEALTH:           '/health',
+  AUTH_MODE:        '/auth/mode',
+  AUTH_LOGIN:       `${ API_BASE }/auth/login`,
+  AUTH_LOGOUT:      `${ API_BASE }/auth/logout`,
+  AUTH_PASSWORD:    `${ API_BASE }/auth/password`,
+  ADAPTERS:         `${ API_BASE }/adapters`,
+  REGISTRY:         `${ API_BASE }/registry`,
+  USERS:            `${ API_BASE }/users`,
+  GROUPS:           `${ API_BASE }/groups`,
+  PLUGINS:          `${ API_BASE }/plugins`,
+  DISCOVERY:        `${ API_BASE }/discovery`,
 } as const;
 
 let cachedServiceLoc: ServiceLocation | null = null;
