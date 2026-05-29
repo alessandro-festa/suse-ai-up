@@ -474,38 +474,43 @@ export default defineComponent({
   font-family:   var(--font-mono, monospace);
 }
 
+// Plain block stack — not flex-column — because a flex-column with
+// max-height applies flex-shrink:1 to children by default, which clipped
+// each row's effective height to less than its content (description and
+// chips rendered past the border, visually overlapping the next row).
+// Block layout sizes each row to its natural content height, and the
+// scroll container does its job without doing layout math on the rows.
 .picker-list {
-  display:        flex;
-  flex-direction: column;
-  gap:            8px;
-  max-height:     420px;
-  overflow-y:     auto;
-  overflow-x:     hidden;
-  padding-right:  4px;
+  display:       block;
+  max-height:    420px;
+  overflow-y:    auto;
+  overflow-x:    hidden;
+  padding-right: 4px;
 }
 // Rendered as `<div role="button">` (not `<button>`) to dodge Rancher Shell's
-// global button styles, which were clamping the row height to ~40px and
-// letting the chips overflow into the next row visually. With a div we own
-// the full layout — flex column body grows to its natural height.
+// global button styles. Grid layout (not flex) so the row sizes to the
+// taller of icon vs body — and both `auto` columns simply expand to content.
 .picker-item {
-  display:        flex;
-  flex-direction: row;
-  align-items:    flex-start;
-  gap:            12px;
-  padding:        10px;
-  width:          100%;
-  height:         auto;
-  min-height:     0;
-  box-sizing:     border-box;
-  background:     transparent;
-  border:         1px solid var(--border, #ddd);
-  border-radius:  6px;
-  text-align:     left;
-  cursor:         pointer;
-  font:           inherit;
-  color:          inherit;
-  line-height:    1.4;
-  user-select:    none;
+  display:               grid;
+  grid-template-columns: 40px 1fr;
+  align-items:           start;
+  gap:                   12px;
+  padding:               10px;
+  width:                 100%;
+  min-height:            0;
+  box-sizing:            border-box;
+  background:            transparent;
+  border:                1px solid var(--border, #ddd);
+  border-radius:         6px;
+  text-align:            left;
+  cursor:                pointer;
+  font:                  inherit;
+  color:                 inherit;
+  line-height:           1.4;
+  user-select:           none;
+}
+.picker-item + .picker-item {
+  margin-top: 8px;
 }
 .picker-item:hover {
   border-color: var(--primary, #1d4ed8);
@@ -558,9 +563,7 @@ export default defineComponent({
   color:       var(--muted, #888);
 }
 .picker-item__body {
-  flex:           1 1 auto;
-  min-width:      0;
-  width:          100%;
+  min-width:      0;        // inside grid, lets text truncate
   display:        flex;
   flex-direction: column;
   gap:            4px;
