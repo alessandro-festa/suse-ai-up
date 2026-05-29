@@ -38,6 +38,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -233,20 +234,81 @@ func (s *layeredUserStore) Subscribe(ctx context.Context, handler clients.StoreE
 }
 
 // layeredGroupStore is the GroupStore mirror of layeredUserStore.
+// It also holds a userRegistry so List/Get can augment each group's
+// Members with the users who reference it in their Spec.Groups —
+// without that "reverse edge" the file-store-only groups (e.g.
+// chart-installed mcp-admins) appear empty even when User CRs declare
+// membership in them.
 type layeredGroupStore struct {
-	file       clients.GroupStore
-	projection auth.GroupRegistry
+	file         clients.GroupStore
+	projection   auth.GroupRegistry
+	userRegistry auth.UserRegistry
 }
 
-func newLayeredGroupStore(file clients.GroupStore, projection auth.GroupRegistry) *layeredGroupStore {
-	return &layeredGroupStore{file: file, projection: projection}
+func newLayeredGroupStore(file clients.GroupStore, projection auth.GroupRegistry, userRegistry auth.UserRegistry) *layeredGroupStore {
+	return &layeredGroupStore{file: file, projection: projection, userRegistry: userRegistry}
+}
+
+// derivedMembersFor returns the set of user IDs (bare names) that
+// reference `groupID` in their RegisteredUser.Groups. Scans the entire
+// user registry — fine for the small directories this system targets.
+// Pass either the bare group name or "namespace/name" form; both are
+// matched against user.Groups entries.
+func (s *layeredGroupStore) derivedMembersFor(groupID string) []string {
+	if s.userRegistry == nil {
+		return nil
+	}
+	bareGroup := stripNamespaceID(groupID)
+	var out []string
+	for _, u := range s.userRegistry.ListUsers() {
+		for _, g := range u.Groups {
+			if g == groupID || g == bareGroup || stripNamespaceID(g) == bareGroup {
+				out = append(out, stripNamespaceID(u.ID))
+				break
+			}
+		}
+	}
+	return out
+}
+
+// unionMembers folds derivedMembers into g.Members in place, dedup +
+// sorted. Stable output makes the picker UI stable across reloads.
+func (s *layeredGroupStore) unionMembers(g *models.Group) {
+	derived := s.derivedMembersFor(g.ID)
+	if len(derived) == 0 && len(g.Members) == 0 {
+		return
+	}
+	seen := make(map[string]bool, len(g.Members)+len(derived))
+	for _, m := range g.Members {
+		if m != "" {
+			seen[stripNamespaceID(m)] = true
+		}
+	}
+	for _, m := range derived {
+		if m != "" {
+			seen[m] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for m := range seen {
+		out = append(out, m)
+	}
+	sort.Strings(out)
+	g.Members = out
 }
 
 func (s *layeredGroupStore) Get(ctx context.Context, id string) (*models.Group, error) {
 	if g, ok := s.projection.GetGroup(id); ok {
-		return registeredGroupToModel(g), nil
+		m := registeredGroupToModel(g)
+		s.unionMembers(m)
+		return m, nil
 	}
-	return s.file.Get(ctx, id)
+	g, err := s.file.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	s.unionMembers(g)
+	return g, nil
 }
 
 func (s *layeredGroupStore) List(ctx context.Context) ([]models.Group, error) {
@@ -254,6 +316,7 @@ func (s *layeredGroupStore) List(ctx context.Context) ([]models.Group, error) {
 	out := make([]models.Group, 0)
 	for _, g := range s.projection.ListGroups() {
 		m := registeredGroupToModel(g)
+		s.unionMembers(m)
 		out = append(out, *m)
 		seen[m.ID] = true
 	}
@@ -263,6 +326,7 @@ func (s *layeredGroupStore) List(ctx context.Context) ([]models.Group, error) {
 	}
 	for _, g := range fileGroups {
 		if !seen[g.ID] {
+			s.unionMembers(&g)
 			out = append(out, g)
 		}
 	}
@@ -297,6 +361,19 @@ func (s *layeredGroupStore) Subscribe(ctx context.Context, handler clients.Store
 	return s.file.Subscribe(ctx, handler)
 }
 
+// stripNamespaceID removes the "<namespace>/" prefix that the User /
+// Group reconcilers stamp onto auth.RegisteredUser.ID for global
+// uniqueness across namespaces. The HTTP DTOs are single-namespace
+// (the operator's own namespace), so callers expect the bare name —
+// otherwise the UI's `DELETE /users/alice` 404s because the actual
+// stored ID is `suse-ai-up-mcp/alice`.
+func stripNamespaceID(id string) string {
+	if i := strings.IndexByte(id, '/'); i >= 0 {
+		return id[i+1:]
+	}
+	return id
+}
+
 // registeredUserToModel projects an auth.RegisteredUser into the
 // models.User shape the HTTP DTOs use. Fields absent from the CR
 // projection (PasswordHash, LastLoginAt, timestamps, provider groups)
@@ -311,7 +388,7 @@ func registeredUserToModel(u *auth.RegisteredUser) *models.User {
 		name = u.Name
 	}
 	return &models.User{
-		ID:           u.ID,
+		ID:           stripNamespaceID(u.ID),
 		Name:         name,
 		Email:        u.Email,
 		Groups:       append([]string(nil), u.Groups...),
@@ -321,7 +398,10 @@ func registeredUserToModel(u *auth.RegisteredUser) *models.User {
 }
 
 // registeredGroupToModel projects an auth.RegisteredGroup into
-// models.Group.
+// models.Group. Members are stored by the reconciler as the full
+// "<namespace>/<name>" id; strip to bare name so the UI can correlate
+// with its own user IDs and the group-membership picker round-trips
+// cleanly.
 func registeredGroupToModel(g *auth.RegisteredGroup) *models.Group {
 	if g == nil {
 		return nil
@@ -330,10 +410,14 @@ func registeredGroupToModel(g *auth.RegisteredGroup) *models.Group {
 	if name == "" {
 		name = g.Name
 	}
+	members := make([]string, 0, len(g.Members))
+	for _, m := range g.Members {
+		members = append(members, stripNamespaceID(m))
+	}
 	return &models.Group{
-		ID:          g.ID,
+		ID:          stripNamespaceID(g.ID),
 		Name:        name,
-		Members:     append([]string(nil), g.Members...),
+		Members:     members,
 		Permissions: append([]string(nil), g.Permissions...),
 	}
 }
