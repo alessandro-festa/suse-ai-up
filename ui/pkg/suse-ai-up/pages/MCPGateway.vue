@@ -476,14 +476,21 @@ export default defineComponent({
   flex-direction: column;
   gap:            8px;
   max-height:     420px;
-  overflow:       auto;
+  overflow-y:     auto;
+  overflow-x:     hidden;
   padding-right:  4px;
 }
+// `display: flex` is set with !important to defeat Rancher Shell's global
+// `button { display: inline-flex }` reset that otherwise collapses each row
+// onto a single line and stacks icons on top of each other.
 .picker-item {
-  display:        flex;
+  display:        flex !important;
+  flex-direction: row;
   align-items:    flex-start;
   gap:            12px;
   padding:        10px;
+  width:          100%;
+  box-sizing:     border-box;
   background:     transparent;
   border:         1px solid var(--border, #ddd);
   border-radius:  6px;
@@ -491,25 +498,49 @@ export default defineComponent({
   cursor:         pointer;
   font:           inherit;
   color:          inherit;
+  line-height:    1.4;
 }
 .picker-item:hover {
   border-color: var(--primary, #1d4ed8);
   background:   var(--disabled-bg, rgba(136, 136, 136, 0.04));
 }
+// Pin the icon box so Rancher's global `img { max-width: 100% }` (or
+// similar) can't expand the image past the 40×40 frame and bleed into
+// the next row.
 .picker-item__icon {
-  width:  40px;
-  height: 40px;
-  flex:   0 0 40px;
-  border:        1px solid var(--border, #ddd);
-  border-radius: 6px;
-  background:    var(--disabled-bg, rgba(136, 136, 136, 0.08));
-  display:        flex;
-  align-items:    center;
+  flex:            0 0 40px;
+  width:           40px;
+  height:          40px;
+  min-width:       40px;
+  min-height:      40px;
+  max-width:       40px;
+  max-height:      40px;
+  border:          1px solid var(--border, #ddd);
+  border-radius:   6px;
+  background:      var(--disabled-bg, rgba(136, 136, 136, 0.08));
+  display:         flex;
+  align-items:     center;
   justify-content: center;
-  overflow:       hidden;
+  overflow:        hidden;
+  box-sizing:      border-box;
 }
-.picker-item__icon--small { width: 32px; height: 32px; flex: 0 0 32px; }
-.picker-item__icon img { width: 100%; height: 100%; object-fit: contain; }
+.picker-item__icon--small {
+  flex:       0 0 32px;
+  width:      32px;
+  height:     32px;
+  min-width:  32px;
+  min-height: 32px;
+  max-width:  32px;
+  max-height: 32px;
+}
+.picker-item__icon img {
+  display:    block;
+  width:      100%;
+  height:     100%;
+  max-width:  100%;
+  max-height: 100%;
+  object-fit: contain;
+}
 .picker-item__initials {
   font-size:   12px;
   font-weight: 600;
@@ -518,6 +549,7 @@ export default defineComponent({
 .picker-item__body {
   flex:           1 1 auto;
   min-width:      0;
+  width:          100%;
   display:        flex;
   flex-direction: column;
   gap:            4px;
