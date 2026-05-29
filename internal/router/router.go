@@ -143,6 +143,7 @@ func Register(r *gin.Engine, svc *bootstrap.AppServices) {
 			registry.GET("", ginToHTTPHandler(svc.RegistryHandler.ListMCPServersFiltered))
 			registry.POST("/upload", svc.RegistryHandler.UploadRegistryEntry)
 			registry.POST("/upload/bulk", svc.RegistryHandler.UploadBulkRegistryEntries)
+			registry.POST("/upload/git", svc.RegistryHandler.UploadGitRegistryFile)
 			registry.POST("/upload/local-mcp", svc.RegistryHandler.UploadLocalMCP)
 			registry.POST("/reload", svc.RegistryHandler.ReloadRegistry)
 			registry.GET("/browse", svc.RegistryHandler.BrowseRegistry)
