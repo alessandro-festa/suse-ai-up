@@ -71,21 +71,92 @@
     </AiUpGallery>
 
     <AiUpModal :open="uploading" title="Upload registry entry" @close="closeUpload">
-      <p class="ai-up-muted">
-        Paste a YAML or JSON document. YAML matches the format used by bulk uploads
-        (<code>hack/registry/mcp_registry.yaml</code>). Minimum fields: <code>name</code> (or <code>id</code>).
-      </p>
-      <textarea
-        v-model="uploadText"
-        class="ai-up-textarea ai-up-textarea--large"
-        rows="14"
-        spellcheck="false"
-        :placeholder="examplePlaceholder"
-      ></textarea>
+      <AiUpTabs :tabs="uploadTabs" v-model:active="uploadMode" />
+
+      <template v-if="uploadMode === 'paste'">
+        <p class="ai-up-muted">
+          Paste a YAML or JSON document. Single entry <strong>or</strong> a YAML list
+          (matches <code>hack/registry/mcp_registry.yaml</code> bulk format). Minimum fields:
+          <code>name</code> (or <code>id</code>).
+        </p>
+        <textarea
+          v-model="uploadText"
+          class="ai-up-textarea ai-up-textarea--large"
+          rows="14"
+          spellcheck="false"
+          :placeholder="examplePlaceholder"
+        ></textarea>
+      </template>
+
+      <template v-else-if="uploadMode === 'file'">
+        <p class="ai-up-muted">
+          Pick a <code>.yaml</code> / <code>.yml</code> / <code>.json</code> file from disk. The contents load
+          below so you can review before uploading.
+        </p>
+        <label class="file-picker">
+          <input
+            type="file"
+            accept=".yaml,.yml,.json,application/x-yaml,application/json"
+            @change="onFilePicked"
+          />
+          <span class="file-picker__name">{{ filePickedName || 'Choose a file...' }}</span>
+        </label>
+        <textarea
+          v-model="uploadText"
+          class="ai-up-textarea ai-up-textarea--large"
+          rows="12"
+          spellcheck="false"
+          placeholder="(file contents will appear here)"
+        ></textarea>
+      </template>
+
+      <template v-else-if="uploadMode === 'git'">
+        <p class="ai-up-muted">
+          Fetch a registry YAML from a Git repo. The backend fetches it server-side, so private repos work too.
+        </p>
+        <label class="ai-up-field">
+          <span>URL <em>*</em></span>
+          <input
+            v-model="git.url"
+            class="ai-up-input"
+            placeholder="https://github.com/SUSE/suse-ai-up"
+            spellcheck="false"
+          />
+          <small class="ai-up-muted">
+            Accepts <code>github.com/&lt;owner&gt;/&lt;repo&gt;</code>, <code>raw.githubusercontent.com</code>,
+            <code>gitlab.com</code>, or any raw https:// URL returning YAML.
+          </small>
+        </label>
+        <label class="ai-up-field">
+          <span>Path <em v-if="needsPath">*</em></span>
+          <input v-model="git.path" class="ai-up-input" placeholder="hack/registry/mcp_registry.yaml" />
+          <small class="ai-up-muted">Required when URL is a <code>github.com</code> repo root.</small>
+        </label>
+        <label class="ai-up-field">
+          <span>Branch</span>
+          <input v-model="git.branch" class="ai-up-input" placeholder="main" />
+        </label>
+        <label class="ai-up-field">
+          <span>Token (private repos)</span>
+          <input
+            v-model="git.token"
+            type="password"
+            class="ai-up-input"
+            placeholder="ghp_..."
+            autocomplete="off"
+          />
+          <small class="ai-up-muted">
+            GitHub PAT → <code>Authorization: Bearer</code>, GitLab PAT → <code>PRIVATE-TOKEN</code>.
+            Sent over HTTPS to your backend only.
+          </small>
+        </label>
+      </template>
+
       <div v-if="uploadError" class="ai-up-banner ai-up-banner--error">{{ uploadError }}</div>
+      <div v-if="uploadSuccess" class="ai-up-banner ai-up-banner--success">{{ uploadSuccess }}</div>
       <template #actions>
         <button class="ai-up-btn ai-up-btn--ghost" @click="closeUpload">Cancel</button>
-        <button class="ai-up-btn" :disabled="!uploadText.trim() || submitting" @click="submitUpload">
+        <button class="ai-up-btn" :disabled="!canSubmitUpload || submitting" @click="submitUploadDispatch">
           {{ submitting ? 'Uploading...' : 'Upload' }}
         </button>
       </template>
@@ -102,6 +173,7 @@ import AiUpToolbar from '../components/AiUpToolbar.vue';
 import AiUpGallery from '../components/AiUpGallery.vue';
 import AiUpPill from '../components/AiUpPill.vue';
 import AiUpModal from '../components/AiUpModal.vue';
+import AiUpTabs from '../components/AiUpTabs.vue';
 import { registryApi, MCPServer } from '../services/registry';
 import { toRegistryView, matchesQuery, RegistryView } from '../services/registry-view';
 
@@ -128,20 +200,33 @@ function decorate(e: MCPServer, broken: Record<string, boolean>): ViewEntry {
   return { ...v, iconBroken: !!broken[v.id] };
 }
 
+type UploadMode = 'paste' | 'file' | 'git';
+
+const UPLOAD_TABS = [
+  { key: 'paste', label: 'Paste' },
+  { key: 'file',  label: 'File' },
+  { key: 'git',   label: 'Git URL' },
+];
+
 export default defineComponent({
   name:       'MCPRegistry',
-  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpPill, AiUpModal },
+  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpPill, AiUpModal, AiUpTabs },
   setup() {
-    const entries     = ref<MCPServer[]>([]);
-    const search      = ref('');
-    const loading     = ref(false);
-    const error       = ref<string | null>(null);
-    const deleting    = ref<string | null>(null);
-    const uploading   = ref(false);
-    const submitting  = ref(false);
-    const uploadText  = ref('');
-    const uploadError = ref<string | null>(null);
-    const brokenIcons = reactive<Record<string, boolean>>({});
+    const entries        = ref<MCPServer[]>([]);
+    const search         = ref('');
+    const loading        = ref(false);
+    const error          = ref<string | null>(null);
+    const deleting       = ref<string | null>(null);
+    const uploading      = ref(false);
+    const submitting     = ref(false);
+    const uploadMode     = ref<UploadMode>('paste');
+    const uploadText     = ref('');
+    const uploadError    = ref<string | null>(null);
+    const uploadSuccess  = ref<string | null>(null);
+    const filePickedName = ref<string | null>(null);
+    const git            = reactive({ url: '', token: '', branch: '', path: '' });
+    const brokenIcons    = reactive<Record<string, boolean>>({});
+    const uploadTabs     = UPLOAD_TABS;
 
     const examplePlaceholder = EXAMPLE;
 
@@ -169,9 +254,13 @@ export default defineComponent({
     }
 
     function openUpload() {
-      uploadText.value  = '';
-      uploadError.value = null;
-      uploading.value   = true;
+      uploadMode.value     = 'paste';
+      uploadText.value     = '';
+      filePickedName.value = null;
+      git.url = '';  git.token = ''; git.branch = ''; git.path = '';
+      uploadError.value    = null;
+      uploadSuccess.value  = null;
+      uploading.value      = true;
     }
 
     function closeUpload() {
@@ -188,7 +277,13 @@ export default defineComponent({
       return jsYaml.load(text);
     }
 
-    async function submitUpload() {
+    function ensureId(entry: any) {
+      if (!entry.id && entry.name) entry.id = entry.name;
+    }
+
+    // Paste + File modes share this path: parse as YAML/JSON, dispatch
+    // to /upload (single object) or /upload/bulk (array).
+    async function submitText() {
       let body: any;
       try {
         body = parsePayload(uploadText.value);
@@ -196,27 +291,87 @@ export default defineComponent({
         uploadError.value = `Invalid YAML/JSON: ${ e.message }`;
         return;
       }
-      if (Array.isArray(body)) {
-        uploadError.value = 'Bulk arrays not supported here yet — upload one entry at a time.';
-        return;
-      }
-      if (!body || (!body.id && !body.name)) {
-        uploadError.value = 'Document must include "id" (or "name").';
-        return;
-      }
-      if (!body.id && body.name) body.id = body.name;
-      submitting.value  = true;
-      uploadError.value = null;
+      submitting.value    = true;
+      uploadError.value   = null;
+      uploadSuccess.value = null;
       try {
-        await registryApi.upload(body);
-        closeUpload();
+        if (Array.isArray(body)) {
+          const items = body.filter((it) => it && (it.id || it.name));
+          items.forEach(ensureId);
+          if (!items.length) {
+            uploadError.value = 'No entries with "id" or "name" found.';
+            return;
+          }
+          const resp = await registryApi.uploadBulk(items);
+          uploadSuccess.value = resp?.message || `Uploaded ${ items.length } entries.`;
+        } else {
+          if (!body || (!body.id && !body.name)) {
+            uploadError.value = 'Document must include "id" (or "name").';
+            return;
+          }
+          ensureId(body);
+          await registryApi.upload(body);
+          uploadSuccess.value = `Uploaded ${ body.id }.`;
+        }
         await refresh();
+        // Auto-close after a brief success so the user sees the banner.
+        setTimeout(() => { if (uploading.value) closeUpload(); }, 800);
       } catch (e: any) {
         uploadError.value = e?.data?.error || e?.message || 'Upload failed';
       } finally {
         submitting.value = false;
       }
     }
+
+    async function submitGit() {
+      if (!git.url.trim()) {
+        uploadError.value = 'URL is required.';
+        return;
+      }
+      submitting.value    = true;
+      uploadError.value   = null;
+      uploadSuccess.value = null;
+      try {
+        const resp = await registryApi.uploadGit({
+          url:    git.url.trim(),
+          token:  git.token.trim() || undefined,
+          branch: git.branch.trim() || undefined,
+          path:   git.path.trim() || undefined,
+        });
+        uploadSuccess.value = resp?.message || `Uploaded ${ resp?.count ?? 0 } entries.`;
+        await refresh();
+        setTimeout(() => { if (uploading.value) closeUpload(); }, 800);
+      } catch (e: any) {
+        uploadError.value = e?.data?.error || e?.message || 'Git upload failed';
+      } finally {
+        submitting.value = false;
+      }
+    }
+
+    function submitUploadDispatch() {
+      if (uploadMode.value === 'git') return submitGit();
+      return submitText();
+    }
+
+    function onFilePicked(ev: Event) {
+      const input = ev.target as HTMLInputElement;
+      const file  = input.files?.[0];
+      if (!file) return;
+      filePickedName.value = file.name;
+      uploadError.value    = null;
+      uploadSuccess.value  = null;
+      const reader = new FileReader();
+      reader.onload  = () => { uploadText.value = String(reader.result || ''); };
+      reader.onerror = () => { uploadError.value = `Could not read ${ file.name }`; };
+      reader.readAsText(file);
+    }
+
+    const canSubmitUpload = computed(() => {
+      if (uploadMode.value === 'git') return !!git.url.trim();
+      return !!uploadText.value.trim();
+    });
+
+    const needsPath = computed(() => /^https?:\/\/github\.com\/[^/]+\/[^/]+\/?$/i.test(git.url.trim()));
 
     async function confirmDelete(e: MCPServer) {
       const id = e.id || (e as any).name;
@@ -240,10 +395,13 @@ export default defineComponent({
 
     return {
       entries, search, loading, error, deleting,
-      uploading, submitting, uploadText, uploadError, examplePlaceholder,
+      uploading, submitting, uploadMode, uploadTabs,
+      uploadText, uploadError, uploadSuccess, filePickedName, git,
+      examplePlaceholder, needsPath, canSubmitUpload,
       filteredView,
-      refresh, openUpload, closeUpload, submitUpload, confirmDelete,
-      onIconError,
+      refresh, openUpload, closeUpload,
+      submitUploadDispatch, onFilePicked,
+      confirmDelete, onIconError,
     };
   },
 });
@@ -399,6 +557,49 @@ export default defineComponent({
   background: var(--error-banner-bg, rgba(220, 38, 38, 0.1));
   color:      var(--error, #dc2626);
   border:     1px solid var(--error, #dc2626);
+}
+.ai-up-banner--success {
+  background: var(--success-banner-bg, rgba(22, 101, 52, 0.1));
+  color:      var(--success, #166534);
+  border:     1px solid var(--success, #166534);
+}
+.ai-up-field {
+  display:        flex;
+  flex-direction: column;
+  gap:            4px;
+  font-size:      12px;
+  color:          var(--muted, #888);
+}
+.ai-up-field em {
+  color:      var(--error, #dc2626);
+  font-style: normal;
+  margin:     0 4px;
+}
+.ai-up-input {
+  padding:        6px 10px;
+  border:         1px solid var(--border, #ddd);
+  border-radius:  6px;
+  background:     var(--body-bg, #fff);
+  color:          var(--body-text, #333);
+  font-size:      13px;
+}
+.file-picker {
+  display:        flex;
+  align-items:    center;
+  gap:            10px;
+  padding:        8px 10px;
+  border:         1px dashed var(--border, #ddd);
+  border-radius:  6px;
+  cursor:         pointer;
+  font-size:      13px;
+}
+.file-picker input[type='file'] {
+  font-size: 12px;
+}
+.file-picker__name {
+  color:     var(--muted, #888);
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
 }
 .ai-up-empty {
   padding:    20px;
