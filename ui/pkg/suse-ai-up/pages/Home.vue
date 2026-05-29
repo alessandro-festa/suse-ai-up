@@ -11,11 +11,12 @@
           <AiUpPill v-else tone="neutral" label="Checking..." />
         </template>
         <template #meta>
-          <span>Backend: {{ backendUrl }}</span>
+          <span>Mode: <strong>{{ baseUrl.mode === 'proxy' ? 'in-cluster proxy' : 'direct URL' }}</strong></span>
+          <span class="ai-up-truncate">{{ baseUrl.url }}</span>
         </template>
         <p v-if="health">Version <strong>{{ health.version || 'n/a' }}</strong> at {{ health.timestamp }}.</p>
         <p v-else-if="healthError" class="ai-up-muted">{{ healthError }}</p>
-        <template #footer>Polled once on page load.</template>
+        <template #footer>Polled once on page load. Update the target in <em>Settings</em>.</template>
       </AiUpCard>
       <AiUpCard title="Get started" subtitle="Next steps for new operators">
         <ul class="ai-up-list">
@@ -41,7 +42,7 @@ import AiUpCard from '../components/AiUpCard.vue';
 import AiUpPill from '../components/AiUpPill.vue';
 import AiUpGallery from '../components/AiUpGallery.vue';
 import { healthApi, HealthResponse } from '../services/health';
-import { getBackendUrl } from '../config/api-config';
+import { describeBaseUrl } from '../config/api-config';
 
 export default defineComponent({
   name:       'Home',
@@ -49,7 +50,7 @@ export default defineComponent({
   setup() {
     const health      = ref<HealthResponse | null>(null);
     const healthError = ref<string | null>(null);
-    const backendUrl  = ref(getBackendUrl());
+    const baseUrl     = ref(describeBaseUrl());
 
     onMounted(async () => {
       try {
@@ -59,7 +60,7 @@ export default defineComponent({
       }
     });
 
-    return { health, healthError, backendUrl };
+    return { health, healthError, baseUrl };
   },
 });
 </script>
@@ -83,5 +84,13 @@ export default defineComponent({
 }
 .ai-up-muted {
   color: var(--muted, #888);
+}
+.ai-up-truncate {
+  display:       inline-block;
+  max-width:     100%;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+  font-family:   var(--font-mono, monospace);
 }
 </style>

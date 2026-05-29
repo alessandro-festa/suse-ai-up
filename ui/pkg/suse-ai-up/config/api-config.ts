@@ -1,71 +1,131 @@
 // Resolve the suse-ai-up backend base URL. Two modes:
-//   1. Direct (default): user-configured backend URL, persisted in store.
-//   2. Rancher cluster proxy: when the dashboard is hosted at a URL
-//      containing /k8s/clusters/, route requests through the proxy so
-//      auth and routing reuse Rancher's session.
+//
+//   1. **In-cluster proxy (default)**: route every request through Rancher's
+//      cluster proxy so the call stays same-origin HTTPS and reuses the
+//      user's Rancher session. URL shape:
+//
+//        /k8s/clusters/<cluster>/api/v1/namespaces/<ns>/services/http:<svc>:<port>/proxy
+//
+//      The backend is a regular ClusterIP Service in the cluster where the
+//      operator runs (default: cluster `local`, namespace `suse-ai-up`,
+//      service `suse-ai-up`, port 8911). Defaults are overridable via the
+//      Settings page and persisted in localStorage.
+//
+//   2. **Direct URL (opt-in)**: when a non-empty direct URL is configured
+//      (Settings page), the proxy is bypassed and requests go straight
+//      to that origin. Use this for local development outside Rancher
+//      (e.g. running `yarn dev` against a Go backend on `http://localhost:8911`).
+//      Note: direct mode triggers browser Mixed Content blocking when the
+//      dashboard itself is loaded over HTTPS — keep it for dev only.
 
 import { LOCAL_STORAGE_KEYS } from './storage';
 
-export const DEFAULT_BACKEND_URL = 'http://localhost:8911';
+export interface ServiceLocation {
+  cluster:   string;
+  namespace: string;
+  name:      string;
+  port:      number;
+}
+
+export const DEFAULT_SERVICE_LOCATION: ServiceLocation = {
+  cluster:   'local',
+  namespace: 'suse-ai-up',
+  name:      'suse-ai-up',
+  port:      8911,
+};
 
 export const API_BASE = '/api/v1';
 
-// Endpoint paths (relative to API_BASE unless leading slash present).
+// Endpoint paths (relative to the resolved base URL).
 export const ENDPOINTS = {
-  HEALTH:        '/health',
-  AUTH_MODE:     '/auth/mode',
-  AUTH_LOGIN:    '/auth/login',
-  AUTH_LOGOUT:   '/auth/logout',
-  ADAPTERS:      `${ API_BASE }/adapters`,
-  REGISTRY:      `${ API_BASE }/registry`,
-  USERS:         `${ API_BASE }/users`,
-  GROUPS:        `${ API_BASE }/groups`,
-  PLUGINS:       `${ API_BASE }/plugins`,
-  DISCOVERY:     `${ API_BASE }/discovery`,
+  HEALTH:    '/health',
+  AUTH_MODE: '/auth/mode',
+  AUTH_LOGIN:  '/auth/login',
+  AUTH_LOGOUT: '/auth/logout',
+  ADAPTERS:  `${ API_BASE }/adapters`,
+  REGISTRY:  `${ API_BASE }/registry`,
+  USERS:     `${ API_BASE }/users`,
+  GROUPS:    `${ API_BASE }/groups`,
+  PLUGINS:   `${ API_BASE }/plugins`,
+  DISCOVERY: `${ API_BASE }/discovery`,
 } as const;
 
-let cachedBackend: string | null = null;
+let cachedServiceLoc: ServiceLocation | null = null;
+let cachedDirectUrl:  string | null = null;
 
-export function getBackendUrl(): string {
-  if (cachedBackend) {
-    return cachedBackend;
-  }
+function readLS(key: string): string | null {
   try {
-    const stored = window.localStorage.getItem(LOCAL_STORAGE_KEYS.BACKEND_URL);
-    if (stored) {
-      cachedBackend = stored;
-      return stored;
-    }
+    return window.localStorage.getItem(key);
   } catch {
-    // window may be unavailable during SSR.
+    return null;
   }
-  return DEFAULT_BACKEND_URL;
 }
 
-export function setBackendUrl(url: string) {
-  cachedBackend = url;
+function writeLS(key: string, value: string) {
   try {
-    window.localStorage.setItem(LOCAL_STORAGE_KEYS.BACKEND_URL, url);
+    window.localStorage.setItem(key, value);
   } catch {
     /* ignore */
   }
 }
 
-// Detect Rancher cluster proxy hosting. When the dashboard URL contains
-// /k8s/clusters/<id>, we tunnel API calls through Rancher's proxy so
-// auth and SSL cert handling go through the dashboard.
+export function getServiceLocation(): ServiceLocation {
+  if (cachedServiceLoc) {
+    return cachedServiceLoc;
+  }
+  const raw = readLS(LOCAL_STORAGE_KEYS.SERVICE_LOCATION);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<ServiceLocation>;
+      cachedServiceLoc = { ...DEFAULT_SERVICE_LOCATION, ...parsed };
+      return cachedServiceLoc;
+    } catch {
+      /* fall through to default */
+    }
+  }
+  cachedServiceLoc = { ...DEFAULT_SERVICE_LOCATION };
+  return cachedServiceLoc;
+}
+
+export function setServiceLocation(loc: ServiceLocation) {
+  cachedServiceLoc = { ...loc };
+  writeLS(LOCAL_STORAGE_KEYS.SERVICE_LOCATION, JSON.stringify(cachedServiceLoc));
+}
+
+export function getDirectBackendUrl(): string {
+  if (cachedDirectUrl !== null) {
+    return cachedDirectUrl;
+  }
+  cachedDirectUrl = readLS(LOCAL_STORAGE_KEYS.DIRECT_BACKEND_URL) || '';
+  return cachedDirectUrl;
+}
+
+export function setDirectBackendUrl(url: string) {
+  cachedDirectUrl = url || '';
+  writeLS(LOCAL_STORAGE_KEYS.DIRECT_BACKEND_URL, cachedDirectUrl);
+}
+
+// Compose the Rancher cluster-proxy URL for the configured Service.
+// Returns a relative URL — axios resolves it against window.location.origin
+// so the call stays same-origin HTTPS and rides the Rancher session.
+export function buildProxyBaseUrl(loc: ServiceLocation = getServiceLocation()): string {
+  return `/k8s/clusters/${ loc.cluster }/api/v1/namespaces/${ loc.namespace }/services/http:${ loc.name }:${ loc.port }/proxy`;
+}
+
+// Effective base URL used by the axios client. Direct URL wins when set.
 export function resolveBaseUrl(): string {
-  try {
-    const { origin, pathname } = window.location;
-    const match = pathname.match(/\/k8s\/clusters\/([^/]+)/);
-    if (match) {
-      // The backend is fronted by a Service in the workload cluster.
-      // Operators configure the proxy path; for now we surface the
-      // raw cluster origin and let the user override via settings.
-      return `${ origin }/k8s/clusters/${ match[1] }/proxy:suse-ai-up`;
-    }
-  } catch {
-    /* ignore */
+  const direct = getDirectBackendUrl();
+  if (direct) {
+    return direct;
   }
-  return getBackendUrl();
+  return buildProxyBaseUrl();
+}
+
+// Human-readable label of the current mode for the Settings/Home UI.
+export function describeBaseUrl(): { mode: 'proxy' | 'direct'; url: string } {
+  const direct = getDirectBackendUrl();
+  if (direct) {
+    return { mode: 'direct', url: direct };
+  }
+  return { mode: 'proxy', url: buildProxyBaseUrl() };
 }

@@ -1,8 +1,18 @@
 // Namespaced Vuex module for the extension. Tracks auth state, the
-// configured backend URL, and a transient error-banner slice.
+// service-location configuration that drives the Rancher cluster proxy
+// URL (plus an optional direct-URL override for local dev), and a
+// transient error-banner slice.
 
 import { LOCAL_STORAGE_KEYS } from '../config/storage';
-import { setBackendUrl, getBackendUrl } from '../config/api-config';
+import {
+  ServiceLocation,
+  DEFAULT_SERVICE_LOCATION,
+  getServiceLocation,
+  setServiceLocation,
+  getDirectBackendUrl,
+  setDirectBackendUrl,
+  describeBaseUrl,
+} from '../config/api-config';
 
 export interface AuthState {
   token: string | null;
@@ -17,10 +27,11 @@ export interface ErrorBanner {
 }
 
 export interface SuseAiUpState {
-  auth:        AuthState;
-  backendUrl:  string;
-  banners:     ErrorBanner[];
-  nextBannerId: number;
+  auth:             AuthState;
+  serviceLocation:  ServiceLocation;
+  directBackendUrl: string;
+  banners:          ErrorBanner[];
+  nextBannerId:     number;
 }
 
 function loadToken(): string | null {
@@ -41,15 +52,18 @@ export default {
         user:  null,
         mode:  null,
       },
-      backendUrl:   getBackendUrl(),
-      banners:      [],
-      nextBannerId: 1,
+      serviceLocation:  getServiceLocation(),
+      directBackendUrl: getDirectBackendUrl(),
+      banners:          [],
+      nextBannerId:     1,
     };
   },
 
   getters: {
     isAuthenticated: (s: SuseAiUpState) => !!s.auth.token,
-    backendUrl:      (s: SuseAiUpState) => s.backendUrl,
+    serviceLocation: (s: SuseAiUpState) => s.serviceLocation,
+    directBackendUrl: (s: SuseAiUpState) => s.directBackendUrl,
+    effectiveBaseUrl: () => describeBaseUrl(),
     banners:         (s: SuseAiUpState) => s.banners,
   },
 
@@ -72,9 +86,13 @@ export default {
     setAuthMode(s: SuseAiUpState, mode: string | null) {
       s.auth.mode = mode;
     },
-    setBackendUrl(s: SuseAiUpState, url: string) {
-      s.backendUrl = url;
-      setBackendUrl(url);
+    setServiceLocation(s: SuseAiUpState, loc: ServiceLocation) {
+      s.serviceLocation = { ...DEFAULT_SERVICE_LOCATION, ...loc };
+      setServiceLocation(s.serviceLocation);
+    },
+    setDirectBackendUrl(s: SuseAiUpState, url: string) {
+      s.directBackendUrl = url || '';
+      setDirectBackendUrl(s.directBackendUrl);
     },
     pushBanner(s: SuseAiUpState, banner: Omit<ErrorBanner, 'id'>) {
       s.banners.push({ id: s.nextBannerId++, ...banner });
