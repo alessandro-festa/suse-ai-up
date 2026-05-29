@@ -243,17 +243,27 @@ func UserAuthMiddleware(authService *UserAuthService) gin.HandlerFunc {
 			return
 		}
 
-		// Extract token from Authorization header
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		// Extract token. Prefer X-Api-Token (sent by clients going through
+		// the Rancher cluster proxy, which validates the standard
+		// Authorization header against Rancher's own user store and
+		// rejects any non-Rancher Bearer JWT with 401 before the request
+		// reaches us). Fall back to Authorization for direct callers
+		// (kubectl proxy, curl, anything bypassing the Rancher proxy).
+		var tokenString string
+		if t := c.GetHeader("X-Api-Token"); t != "" {
+			// X-Api-Token carries the raw JWT (no "Bearer " prefix needed —
+			// the header name itself disambiguates).
+			tokenString = strings.TrimPrefix(t, "Bearer ")
+		} else if authHeader := c.GetHeader("Authorization"); authHeader != "" {
+			parsed, err := ExtractTokenFromHeader(authHeader)
+			if err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+				c.Abort()
+				return
+			}
+			tokenString = parsed
+		} else {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization required"})
-			c.Abort()
-			return
-		}
-
-		tokenString, err := ExtractTokenFromHeader(authHeader)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			c.Abort()
 			return
 		}
@@ -267,6 +277,11 @@ func UserAuthMiddleware(authService *UserAuthService) gin.HandlerFunc {
 		}
 
 		c.Set("user", user)
+		// Propagate the authenticated identity to legacy handlers that
+		// still read X-User-ID directly (e.g. users.go:83, groups.go,
+		// route_assignment.go) instead of c.Get("user"). The dev-mode
+		// branch above does the same.
+		c.Request.Header.Set("X-User-ID", user.ID)
 		c.Next()
 	}
 }

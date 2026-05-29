@@ -118,34 +118,48 @@ func (ugs *UserGroupService) CanAccessServer(ctx context.Context, userID, server
 	return false, nil
 }
 
-// CanManageUsers checks if a user can manage users
+// CanManageUsers checks if a user can manage users. Accepts either the
+// legacy `user:manage` permission OR the granular CRUD set that the
+// chart-installed mcp-admins group ships with
+// (`user:create` + `user:update` + `user:delete`) OR a wildcard `user:*`.
 func (ugs *UserGroupService) CanManageUsers(ctx context.Context, userID string) (bool, error) {
-	// Allow dev-admin special permissions for development
 	if userID == "dev-admin" {
 		return true, nil
 	}
-
 	user, err := ugs.userStore.Get(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get user: %w", err)
 	}
-
-	return ugs.hasPermission(user.Groups, "user:manage"), nil
+	if ugs.hasPermission(user.Groups, "user:manage") {
+		return true, nil
+	}
+	if ugs.hasPermission(user.Groups, "user:create") &&
+		ugs.hasPermission(user.Groups, "user:update") &&
+		ugs.hasPermission(user.Groups, "user:delete") {
+		return true, nil
+	}
+	return false, nil
 }
 
-// CanManageGroups checks if a user can manage groups
+// CanManageGroups mirrors CanManageUsers — accepts legacy `group:manage`
+// or the granular `group:create` + `group:update` + `group:delete` set.
 func (ugs *UserGroupService) CanManageGroups(ctx context.Context, userID string) (bool, error) {
-	// Allow dev-admin special permissions for development
 	if userID == "dev-admin" {
 		return true, nil
 	}
-
 	user, err := ugs.userStore.Get(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get user: %w", err)
 	}
-
-	return ugs.hasPermission(user.Groups, "group:manage"), nil
+	if ugs.hasPermission(user.Groups, "group:manage") {
+		return true, nil
+	}
+	if ugs.hasPermission(user.Groups, "group:create") &&
+		ugs.hasPermission(user.Groups, "group:update") &&
+		ugs.hasPermission(user.Groups, "group:delete") {
+		return true, nil
+	}
+	return false, nil
 }
 
 // CanCreateAdapters checks if a user can create adapters
