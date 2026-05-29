@@ -67,12 +67,15 @@
           No entries match "{{ pickSearch }}".
         </div>
         <div v-else class="picker-list">
-          <button
+          <div
             v-for="v in pickFiltered"
             :key="v.id"
-            type="button"
             class="picker-item"
+            role="button"
+            tabindex="0"
             @click="selectEntry(v)"
+            @keydown.enter.prevent="selectEntry(v)"
+            @keydown.space.prevent="selectEntry(v)"
           >
             <div class="picker-item__icon">
               <img v-if="v.iconUrl && !brokenIcons[v.id]" :src="v.iconUrl" alt="" referrerpolicy="no-referrer" @error="brokenIcons[v.id] = true" />
@@ -91,7 +94,7 @@
                 <span v-for="t in v.tags.slice(0, 3)" :key="t" class="picker-item__tag">{{ t }}</span>
               </div>
             </div>
-          </button>
+          </div>
         </div>
       </template>
 
@@ -480,16 +483,19 @@ export default defineComponent({
   overflow-x:     hidden;
   padding-right:  4px;
 }
-// `display: flex` is set with !important to defeat Rancher Shell's global
-// `button { display: inline-flex }` reset that otherwise collapses each row
-// onto a single line and stacks icons on top of each other.
+// Rendered as `<div role="button">` (not `<button>`) to dodge Rancher Shell's
+// global button styles, which were clamping the row height to ~40px and
+// letting the chips overflow into the next row visually. With a div we own
+// the full layout — flex column body grows to its natural height.
 .picker-item {
-  display:        flex !important;
+  display:        flex;
   flex-direction: row;
   align-items:    flex-start;
   gap:            12px;
   padding:        10px;
   width:          100%;
+  height:         auto;
+  min-height:     0;
   box-sizing:     border-box;
   background:     transparent;
   border:         1px solid var(--border, #ddd);
@@ -499,10 +505,15 @@ export default defineComponent({
   font:           inherit;
   color:          inherit;
   line-height:    1.4;
+  user-select:    none;
 }
 .picker-item:hover {
   border-color: var(--primary, #1d4ed8);
   background:   var(--disabled-bg, rgba(136, 136, 136, 0.04));
+}
+.picker-item:focus-visible {
+  outline:        2px solid var(--primary, #1d4ed8);
+  outline-offset: 1px;
 }
 // Pin the icon box so Rancher's global `img { max-width: 100% }` (or
 // similar) can't expand the image past the 40×40 frame and bleed into
