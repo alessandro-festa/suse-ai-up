@@ -3,6 +3,9 @@
 
 export const LOCAL_STORAGE_KEYS = {
   AUTH_TOKEN:          'suse-ai-up-auth-token',
+  // JSON-serialized AuthUser. Stashed alongside AUTH_TOKEN so the UI can
+  // render "Signed in as <name>" without re-fetching after a reload.
+  AUTH_USER:           'suse-ai-up-auth-user',
   // JSON: { cluster, namespace, name, port }. Default below.
   SERVICE_LOCATION:    'suse-ai-up-service-location',
   // Optional direct backend URL (e.g. http://localhost:8911) for local

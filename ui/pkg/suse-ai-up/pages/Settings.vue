@@ -1,5 +1,25 @@
 <template>
   <AiUpPage title="Settings" subtitle="Backend connection, users, and groups">
+    <!-- Account banner: shown above the tabs because every mutation depends on it. -->
+    <div class="account-bar">
+      <template v-if="authUser">
+        <div class="account-bar__info">
+          <strong>Signed in as {{ authUser.name || authUser.id }}</strong>
+          <span v-if="authUser.email" class="ai-up-muted">{{ authUser.email }}</span>
+        </div>
+        <button class="ai-up-btn ai-up-btn--ghost" @click="signOut">Sign out</button>
+      </template>
+      <template v-else>
+        <div class="account-bar__info">
+          <strong>Not signed in</strong>
+          <span class="ai-up-muted">
+            Creating users, groups, or any other mutation requires authentication.
+          </span>
+        </div>
+        <button class="ai-up-btn" @click="openSignIn">Sign in</button>
+      </template>
+    </div>
+
     <AiUpTabs :tabs="tabs" v-model:active="activeTab" />
 
     <!-- =========== Backend tab =========== -->
@@ -182,6 +202,30 @@
       </template>
     </AiUpModal>
 
+    <!-- =========== Sign-in modal =========== -->
+    <AiUpModal :open="signInOpen" title="Sign in" @close="closeSignIn">
+      <p class="ai-up-muted">
+        Use the admin credentials from your Helm release (default
+        <code>admin / admin</code> from <code>charts/suse-ai-up/values.yaml</code>
+        <code>auth.local.defaultAdminPassword</code>).
+      </p>
+      <label class="ai-up-field">
+        <span>User ID <em>*</em></span>
+        <input v-model="signInForm.userId" class="ai-up-input" autocomplete="username" placeholder="admin" autofocus />
+      </label>
+      <label class="ai-up-field">
+        <span>Password <em>*</em></span>
+        <input v-model="signInForm.password" type="password" class="ai-up-input" autocomplete="current-password" @keyup.enter="signIn" />
+      </label>
+      <div v-if="signInError" class="ai-up-banner ai-up-banner--error">{{ signInError }}</div>
+      <template #actions>
+        <button class="ai-up-btn ai-up-btn--ghost" @click="closeSignIn">Cancel</button>
+        <button class="ai-up-btn" :disabled="!canSignIn || signingIn" @click="signIn">
+          {{ signingIn ? 'Signing in...' : 'Sign in' }}
+        </button>
+      </template>
+    </AiUpModal>
+
     <!-- =========== Group members modal =========== -->
     <AiUpModal :open="!!membersGroup" :title="membersGroup ? `Manage members of ${ membersGroup.name || membersGroup.id }` : ''" @close="membersGroup = null">
       <p class="ai-up-muted">Pick which users belong to this group. Changes apply on Save.</p>
@@ -204,7 +248,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, computed, reactive, onMounted, watch } from 'vue';
+import { defineComponent, ref, computed, reactive, onMounted, onUnmounted, watch } from 'vue';
 import AiUpPage from '../components/AiUpPage.vue';
 import AiUpGallery from '../components/AiUpGallery.vue';
 import AiUpCard from '../components/AiUpCard.vue';
@@ -223,6 +267,10 @@ import {
 } from '../config/api-config';
 import { usersApi, User } from '../services/users';
 import { groupsApi, Group } from '../services/groups';
+import {
+  authApi, AuthUser,
+  setStoredToken, setStoredUser, getStoredUser,
+} from '../services/auth';
 
 const TABS = [
   { key: 'backend', label: 'Backend' },
@@ -246,6 +294,58 @@ export default defineComponent({
     // -------------------------------------------------- shared
     const tabs      = TABS;
     const activeTab = ref<'backend' | 'users' | 'groups'>('backend');
+
+    // -------------------------------------------------- account / sign-in
+    const authUser    = ref<AuthUser | null>(getStoredUser());
+    const signInOpen  = ref(false);
+    const signingIn   = ref(false);
+    const signInError = ref<string | null>(null);
+    const signInForm  = reactive({ userId: 'admin', password: '' });
+    const canSignIn   = computed(() => !!(signInForm.userId.trim() && signInForm.password));
+
+    function openSignIn() {
+      signInForm.password = '';
+      signInError.value   = null;
+      signInOpen.value    = true;
+    }
+    function closeSignIn() { signInOpen.value = false; }
+
+    async function signIn() {
+      signingIn.value   = true;
+      signInError.value = null;
+      try {
+        const { token, user } = await authApi.login(signInForm.userId.trim(), signInForm.password);
+        if (!token) {
+          signInError.value = 'Login succeeded but no token returned.';
+          return;
+        }
+        setStoredToken(token);
+        setStoredUser(user);
+        authUser.value = user;
+        signInOpen.value = false;
+        // Re-prime user/group lists now that we may see more.
+        loadUsers();
+        loadGroups();
+      } catch (e: any) {
+        signInError.value = e?.data?.error || e?.message || 'Sign-in failed';
+      } finally {
+        signingIn.value = false;
+      }
+    }
+
+    async function signOut() {
+      try { await authApi.logout(); } catch { /* token may already be cleared */ }
+      setStoredToken(null);
+      setStoredUser(null);
+      authUser.value = null;
+    }
+
+    // Auto-open the sign-in modal when any request returned 401
+    // (base-api.ts dispatches this event from its response interceptor).
+    function onAuthRequired() {
+      authUser.value = null;
+      openSignIn();
+    }
 
     // -------------------------------------------------- Backend tab
     const service        = ref<ServiceLocation>({ ...getServiceLocation() });
@@ -476,15 +576,22 @@ export default defineComponent({
     }, { immediate: false });
 
     onMounted(() => {
+      window.addEventListener('suse-ai-up:auth-required', onAuthRequired);
       // Prime both lists so the user/group multipickers (used by other modals)
       // have data even before the user clicks into the tabs.
       loadUsers();
       loadGroups();
     });
+    onUnmounted(() => {
+      window.removeEventListener('suse-ai-up:auth-required', onAuthRequired);
+    });
 
     return {
       // shared
       tabs, activeTab,
+      // account
+      authUser, signInOpen, signingIn, signInError, signInForm, canSignIn,
+      openSignIn, closeSignIn, signIn, signOut,
       // backend
       service, serviceForm, directUrlInput, savedAt,
       effectiveUrl, mode,
@@ -510,6 +617,24 @@ export default defineComponent({
 
 <style lang="scss" scoped>
 @import '../styles/tokens.scss';
+
+.account-bar {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             12px;
+  padding:         10px 14px;
+  border:          1px solid var(--border, #ddd);
+  border-radius:   6px;
+  background:      var(--disabled-bg, rgba(136, 136, 136, 0.04));
+  margin-bottom:   12px;
+}
+.account-bar__info {
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  font-size:      13px;
+}
 
 .tab-toolbar {
   display:     flex;
