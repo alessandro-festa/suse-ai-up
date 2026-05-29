@@ -134,7 +134,8 @@ export default defineComponent({
       loading.value = true;
       error.value   = null;
       try {
-        entries.value = await registryApi.list();
+        // Backend returns JSON `null` for an empty Go slice; coerce to [].
+        entries.value = (await registryApi.list()) || [];
       } catch (e: any) {
         error.value = e?.message || 'Unknown error';
       } finally {
