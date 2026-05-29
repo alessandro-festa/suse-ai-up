@@ -165,7 +165,8 @@ export default defineComponent({
 
     async function loadRegistry() {
       try {
-        registryEntries.value = (await registryApi.list()) || [];
+        // /browse, not /registry — see MCPRegistry.vue refresh() for context.
+        registryEntries.value = (await registryApi.browse()) || [];
       } catch {
         // Non-fatal: dropdown falls back to free-text input.
       }
