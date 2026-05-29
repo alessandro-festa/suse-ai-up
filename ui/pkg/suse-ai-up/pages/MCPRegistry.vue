@@ -161,6 +161,29 @@
         </button>
       </template>
     </AiUpModal>
+
+    <!-- Conflict resolution: shown when bulk/git upload returns 409 -->
+    <AiUpModal :open="!!conflictState" title="Some entries already exist" @close="cancelConflict">
+      <p>
+        {{ conflictState?.ids.length }} of the entries you uploaded already exist in the registry:
+      </p>
+      <div class="conflict-list">
+        <span v-for="id in conflictState?.ids" :key="id" class="chip chip--warning">{{ id }}</span>
+      </div>
+      <p class="ai-up-muted">
+        <strong>Overwrite</strong> replaces each conflicting entry's spec with the uploaded version (existing
+        adapters keep working). <strong>Skip</strong> leaves the existing entries untouched and creates the rest.
+      </p>
+      <template #actions>
+        <button class="ai-up-btn ai-up-btn--ghost" @click="cancelConflict">Cancel</button>
+        <button class="ai-up-btn ai-up-btn--ghost" :disabled="resolvingConflict" @click="resolveConflict('skip')">
+          Skip existing
+        </button>
+        <button class="ai-up-btn" :disabled="resolvingConflict" @click="resolveConflict('overwrite')">
+          {{ resolvingConflict ? 'Working...' : 'Overwrite' }}
+        </button>
+      </template>
+    </AiUpModal>
   </AiUpPage>
 </template>
 
@@ -174,7 +197,7 @@ import AiUpGallery from '../components/AiUpGallery.vue';
 import AiUpPill from '../components/AiUpPill.vue';
 import AiUpModal from '../components/AiUpModal.vue';
 import AiUpTabs from '../components/AiUpTabs.vue';
-import { registryApi, MCPServer } from '../services/registry';
+import { registryApi, MCPServer, ConflictMode, BulkUploadResult } from '../services/registry';
 import { toRegistryView, matchesQuery, RegistryView } from '../services/registry-view';
 
 const EXAMPLE = `name: weather-mcp
@@ -227,6 +250,18 @@ export default defineComponent({
     const git            = reactive({ url: '', token: '', branch: '', path: '' });
     const brokenIcons    = reactive<Record<string, boolean>>({});
     const uploadTabs     = UPLOAD_TABS;
+
+    // Conflict-resolution state. When a bulk/git upload returns 409 with a
+    // {conflicts:[]} body, we stash the last attempt and surface a dialog
+    // so the user can pick Overwrite or Skip; then we resubmit.
+    interface ConflictState {
+      ids:    string[];
+      kind:   'bulk' | 'git';
+      // The exact payload we'll resend, parameterized by mode.
+      replay: (mode: ConflictMode) => Promise<BulkUploadResult>;
+    }
+    const conflictState     = ref<ConflictState | null>(null);
+    const resolvingConflict = ref(false);
 
     const examplePlaceholder = EXAMPLE;
 
@@ -281,6 +316,48 @@ export default defineComponent({
       if (!entry.id && entry.name) entry.id = entry.name;
     }
 
+    function summarize(resp: BulkUploadResult, fallback: string): string {
+      const parts: string[] = [];
+      if (resp?.created) parts.push(`created ${ resp.created }`);
+      if (resp?.updated) parts.push(`updated ${ resp.updated }`);
+      if (resp?.skipped) parts.push(`skipped ${ resp.skipped }`);
+      if (resp?.failed)  parts.push(`failed ${ resp.failed }`);
+      if (parts.length) return parts.join(', ');
+      return resp?.message || fallback;
+    }
+
+    // Detect the 409 + conflicts envelope our backend sends back in abort
+    // mode. Returns the list of conflicting ids, or null when it's a
+    // different error shape.
+    function parseConflictsFromError(e: any): string[] | null {
+      if (e?.status !== 409) return null;
+      const data = e?.data || {};
+      if (Array.isArray(data.conflicts) && data.conflicts.length) {
+        return data.conflicts.filter((x: any) => typeof x === 'string');
+      }
+      return null;
+    }
+
+    async function runBulk(items: Partial<MCPServer>[], mode?: ConflictMode): Promise<BulkUploadResult> {
+      const resp = await registryApi.uploadBulk(items, mode);
+      uploadSuccess.value = summarize(resp, `Uploaded ${ items.length } entries.`);
+      await refresh();
+      return resp;
+    }
+
+    async function runGit(mode?: ConflictMode): Promise<BulkUploadResult> {
+      const resp = await registryApi.uploadGit({
+        url:        git.url.trim(),
+        token:      git.token.trim() || undefined,
+        branch:     git.branch.trim() || undefined,
+        path:       git.path.trim() || undefined,
+        onConflict: mode,
+      });
+      uploadSuccess.value = summarize(resp, `Uploaded ${ resp?.count ?? 0 } entries.`);
+      await refresh();
+      return resp;
+    }
+
     // Paste + File modes share this path: parse as YAML/JSON, dispatch
     // to /upload (single object) or /upload/bulk (array).
     async function submitText() {
@@ -302,8 +379,21 @@ export default defineComponent({
             uploadError.value = 'No entries with "id" or "name" found.';
             return;
           }
-          const resp = await registryApi.uploadBulk(items);
-          uploadSuccess.value = resp?.message || `Uploaded ${ items.length } entries.`;
+          try {
+            await runBulk(items);
+            setTimeout(() => { if (uploading.value) closeUpload(); }, 800);
+          } catch (e: any) {
+            const conflicts = parseConflictsFromError(e);
+            if (conflicts) {
+              conflictState.value = {
+                ids:    conflicts,
+                kind:   'bulk',
+                replay: (mode) => runBulk(items, mode),
+              };
+            } else {
+              uploadError.value = e?.data?.error || e?.message || 'Upload failed';
+            }
+          }
         } else {
           if (!body || (!body.id && !body.name)) {
             uploadError.value = 'Document must include "id" (or "name").';
@@ -312,10 +402,9 @@ export default defineComponent({
           ensureId(body);
           await registryApi.upload(body);
           uploadSuccess.value = `Uploaded ${ body.id }.`;
+          await refresh();
+          setTimeout(() => { if (uploading.value) closeUpload(); }, 800);
         }
-        await refresh();
-        // Auto-close after a brief success so the user sees the banner.
-        setTimeout(() => { if (uploading.value) closeUpload(); }, 800);
       } catch (e: any) {
         uploadError.value = e?.data?.error || e?.message || 'Upload failed';
       } finally {
@@ -332,20 +421,41 @@ export default defineComponent({
       uploadError.value   = null;
       uploadSuccess.value = null;
       try {
-        const resp = await registryApi.uploadGit({
-          url:    git.url.trim(),
-          token:  git.token.trim() || undefined,
-          branch: git.branch.trim() || undefined,
-          path:   git.path.trim() || undefined,
-        });
-        uploadSuccess.value = resp?.message || `Uploaded ${ resp?.count ?? 0 } entries.`;
-        await refresh();
+        await runGit();
         setTimeout(() => { if (uploading.value) closeUpload(); }, 800);
       } catch (e: any) {
-        uploadError.value = e?.data?.error || e?.message || 'Git upload failed';
+        const conflicts = parseConflictsFromError(e);
+        if (conflicts) {
+          conflictState.value = {
+            ids:    conflicts,
+            kind:   'git',
+            replay: (mode) => runGit(mode),
+          };
+        } else {
+          uploadError.value = e?.data?.error || e?.message || 'Git upload failed';
+        }
       } finally {
         submitting.value = false;
       }
+    }
+
+    async function resolveConflict(mode: ConflictMode) {
+      if (!conflictState.value) return;
+      resolvingConflict.value = true;
+      uploadError.value       = null;
+      try {
+        await conflictState.value.replay(mode);
+        conflictState.value = null;
+        setTimeout(() => { if (uploading.value) closeUpload(); }, 800);
+      } catch (e: any) {
+        uploadError.value = e?.data?.error || e?.message || 'Retry failed';
+      } finally {
+        resolvingConflict.value = false;
+      }
+    }
+
+    function cancelConflict() {
+      conflictState.value = null;
     }
 
     function submitUploadDispatch() {
@@ -402,6 +512,7 @@ export default defineComponent({
       refresh, openUpload, closeUpload,
       submitUploadDispatch, onFilePicked,
       confirmDelete, onIconError,
+      conflictState, resolvingConflict, resolveConflict, cancelConflict,
     };
   },
 });
@@ -562,6 +673,23 @@ export default defineComponent({
   background: var(--success-banner-bg, rgba(22, 101, 52, 0.1));
   color:      var(--success, #166534);
   border:     1px solid var(--success, #166534);
+}
+.conflict-list {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       6px;
+  margin:    4px 0 8px;
+}
+.chip {
+  font-size:     11px;
+  padding:       2px 8px;
+  border-radius: 10px;
+  background:    var(--disabled-bg, rgba(136, 136, 136, 0.08));
+  color:         var(--muted, #888);
+}
+.chip--warning {
+  background: var(--warning-banner-bg, rgba(244, 161, 41, 0.15));
+  color:      var(--warning, #f4a129);
 }
 .ai-up-field {
   display:        flex;
