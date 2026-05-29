@@ -594,7 +594,7 @@ export default defineComponent({
 .acl-radio input { width: 14px; height: 14px; }
 .ai-up-banner--warning {
   background: var(--warning-banner-bg, rgba(244, 161, 41, 0.12));
-  color:      var(--warning, #f4a129);
+  color:      #8a5a07;
   border:     1px solid var(--warning, #f4a129);
 }
 .ai-up-details summary {
