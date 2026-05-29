@@ -134,8 +134,11 @@ export default defineComponent({
       loading.value = true;
       error.value   = null;
       try {
-        // Backend returns JSON `null` for an empty Go slice; coerce to [].
-        entries.value = (await registryApi.list()) || [];
+        // Use /browse (unfiltered catalog) rather than /registry, which is
+        // permission-filtered by X-User-ID and returns null for unmatched
+        // callers. Backend may still emit JSON `null` for an empty Go slice
+        // so coerce to [].
+        entries.value = (await registryApi.browse()) || [];
       } catch (e: any) {
         error.value = e?.message || 'Unknown error';
       } finally {
