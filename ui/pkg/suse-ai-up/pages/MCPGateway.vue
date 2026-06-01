@@ -49,33 +49,130 @@
       </AiUpCard>
     </AiUpGallery>
 
-    <AiUpModal :open="creating" title="Create adapter" @close="closeCreate">
-      <label class="ai-up-field">
-        <span>Name <em>*</em></span>
-        <input v-model="form.name" class="ai-up-input" placeholder="my-adapter" />
-      </label>
-      <label class="ai-up-field">
-        <span>MCP Server ID <em>*</em></span>
-        <select v-if="registryEntries.length" v-model="form.mcpServerId" class="ai-up-input">
-          <option value="" disabled>Select a registry entry</option>
-          <option v-for="r in registryEntries" :key="r.id" :value="r.id">{{ r.id }}{{ r.name ? ` — ${r.name}` : '' }}</option>
-        </select>
-        <input v-else v-model="form.mcpServerId" class="ai-up-input" placeholder="weather-mcp" />
-        <small class="ai-up-muted">Must match an existing entry from MCP Registry.</small>
-      </label>
-      <label class="ai-up-field">
-        <span>Description</span>
-        <input v-model="form.description" class="ai-up-input" placeholder="(optional)" />
-      </label>
-      <label class="ai-up-field">
-        <span>Environment variables (one per line, KEY=value)</span>
-        <textarea v-model="envText" class="ai-up-textarea" rows="4" placeholder="OPENAI_API_KEY=sk-...&#10;TIMEOUT=30s"></textarea>
-      </label>
-      <div v-if="createError" class="ai-up-banner ai-up-banner--error">{{ createError }}</div>
+    <AiUpModal :open="creating" :title="modalTitle" @close="closeCreate">
+      <!-- Step 1: pick an MCP server from the registry -->
+      <template v-if="!selected">
+        <input
+          v-model="pickSearch"
+          type="search"
+          class="ai-up-input"
+          placeholder="Search registry by name, tag, category, or runtime..."
+          autofocus
+        />
+        <div v-if="loadingRegistry" class="ai-up-empty">Loading registry...</div>
+        <div v-else-if="!registryViews.length" class="ai-up-empty">
+          Registry is empty. Upload an entry on the MCP Registry page first.
+        </div>
+        <div v-else-if="!pickFiltered.length" class="ai-up-empty">
+          No entries match "{{ pickSearch }}".
+        </div>
+        <div v-else class="picker-list">
+          <div
+            v-for="v in pickFiltered"
+            :key="v.id"
+            class="picker-item"
+            role="button"
+            tabindex="0"
+            @click="selectEntry(v)"
+            @keydown.enter.prevent="selectEntry(v)"
+            @keydown.space.prevent="selectEntry(v)"
+          >
+            <div class="picker-item__icon">
+              <img v-if="v.iconUrl && !brokenIcons[v.id]" :src="v.iconUrl" alt="" referrerpolicy="no-referrer" @error="brokenIcons[v.id] = true" />
+              <span v-else class="picker-item__initials">{{ v.initials }}</span>
+            </div>
+            <div class="picker-item__body">
+              <div class="picker-item__title-row">
+                <strong class="picker-item__title">{{ v.title }}</strong>
+                <AiUpPill v-if="v.version" tone="info" :label="`v${ v.version }`" />
+              </div>
+              <p v-if="v.description" class="picker-item__desc">{{ v.description }}</p>
+              <div class="picker-item__chips">
+                <AiUpPill :tone="v.runtime.tone" :label="v.runtime.label" />
+                <AiUpPill v-if="v.transport" tone="neutral" :label="v.transport" />
+                <AiUpPill v-if="v.category" tone="neutral" :label="v.category" />
+                <span v-for="t in v.tags.slice(0, 3)" :key="t" class="picker-item__tag">{{ t }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Step 2: configure the adapter for the selected MCP server -->
+      <template v-else>
+        <div class="selected-banner">
+          <div class="picker-item__icon picker-item__icon--small">
+            <img v-if="selected.iconUrl && !brokenIcons[selected.id]" :src="selected.iconUrl" alt="" referrerpolicy="no-referrer" @error="brokenIcons[selected.id] = true" />
+            <span v-else class="picker-item__initials">{{ selected.initials }}</span>
+          </div>
+          <div class="selected-banner__body">
+            <strong>{{ selected.title }}</strong>
+            <small>{{ selected.id }}{{ selected.version ? ` · v${ selected.version }` : '' }} · {{ selected.runtime.label }}</small>
+          </div>
+          <button type="button" class="ai-up-btn ai-up-btn--ghost" @click="selected = null">Change</button>
+        </div>
+
+        <label class="ai-up-field">
+          <span>Adapter name <em>*</em></span>
+          <input v-model="form.name" class="ai-up-input" placeholder="my-adapter" />
+        </label>
+        <label class="ai-up-field">
+          <span>Description</span>
+          <input v-model="form.description" class="ai-up-input" placeholder="(optional)" />
+        </label>
+
+        <div v-if="selected.secrets.length" class="ai-up-fieldset">
+          <div class="ai-up-fieldset__legend">Configuration</div>
+          <p class="ai-up-muted">Values defined in this MCP server's <code>meta.config.secrets</code>.</p>
+          <label v-for="s in selected.secrets" :key="s.env" class="ai-up-field">
+            <span>
+              {{ s.name }}
+              <em v-if="s.templated">*</em>
+              <code class="ai-up-field__env">{{ s.env }}</code>
+            </span>
+            <input
+              v-if="s.type === 'bool'"
+              type="checkbox"
+              :checked="vars[s.env] === 'true'"
+              class="ai-up-checkbox"
+              @change="vars[s.env] = ($event.target as HTMLInputElement).checked ? 'true' : 'false'"
+            />
+            <input
+              v-else
+              v-model="vars[s.env]"
+              :type="s.type === 'secret' ? 'password' : 'text'"
+              class="ai-up-input"
+              :placeholder="s.example || (s.type === 'secret' ? '••••••••' : '')"
+              :autocomplete="s.type === 'secret' ? 'new-password' : 'off'"
+            />
+          </label>
+        </div>
+
+        <details class="ai-up-details">
+          <summary>Additional environment variables</summary>
+          <p class="ai-up-muted">One <code>KEY=value</code> per line. Merged with the configuration above; keys here override.</p>
+          <textarea
+            v-model="envText"
+            class="ai-up-textarea"
+            rows="3"
+            placeholder="LOG_LEVEL=debug&#10;FOO=bar"
+          ></textarea>
+        </details>
+
+        <div v-if="createError" class="ai-up-banner ai-up-banner--error">{{ createError }}</div>
+      </template>
+
       <template #actions>
-        <button class="ai-up-btn ai-up-btn--ghost" @click="closeCreate">Cancel</button>
-        <button class="ai-up-btn" :disabled="!canCreate || submitting" @click="submitCreate">
-          {{ submitting ? 'Creating...' : 'Create' }}
+        <button v-if="selected" type="button" class="ai-up-btn ai-up-btn--ghost" @click="selected = null">← Back</button>
+        <button type="button" class="ai-up-btn ai-up-btn--ghost" @click="closeCreate">Cancel</button>
+        <button
+          v-if="selected"
+          type="button"
+          class="ai-up-btn"
+          :disabled="!canCreate || submitting"
+          @click="submitCreate"
+        >
+          {{ submitting ? 'Creating...' : 'Create adapter' }}
         </button>
       </template>
     </AiUpModal>
@@ -83,7 +180,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, computed, onMounted } from 'vue';
+import { defineComponent, ref, computed, onMounted, reactive, watch } from 'vue';
 import AiUpPage from '../components/AiUpPage.vue';
 import AiUpToolbar from '../components/AiUpToolbar.vue';
 import AiUpGallery from '../components/AiUpGallery.vue';
@@ -91,7 +188,8 @@ import AiUpCard from '../components/AiUpCard.vue';
 import AiUpPill from '../components/AiUpPill.vue';
 import AiUpModal from '../components/AiUpModal.vue';
 import { adaptersApi, Adapter } from '../services/adapters';
-import { registryApi, MCPServer } from '../services/registry';
+import { registryApi } from '../services/registry';
+import { toRegistryView, matchesQuery, RegistryView } from '../services/registry-view';
 
 interface ListAdapter extends Adapter {
   id?:          string;
@@ -117,17 +215,22 @@ export default defineComponent({
   name:       'MCPGateway',
   components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpCard, AiUpPill, AiUpModal },
   setup() {
-    const adapters        = ref<ListAdapter[]>([]);
-    const registryEntries = ref<MCPServer[]>([]);
-    const search          = ref('');
-    const loading         = ref(false);
-    const error           = ref<string | null>(null);
-    const deleting        = ref<string | null>(null);
-    const creating        = ref(false);
-    const submitting      = ref(false);
-    const createError     = ref<string | null>(null);
-    const form            = ref({ name: '', mcpServerId: '', description: '' });
-    const envText         = ref('');
+    const adapters       = ref<ListAdapter[]>([]);
+    const registryViews  = ref<RegistryView[]>([]);
+    const loadingRegistry = ref(false);
+    const search         = ref('');
+    const loading        = ref(false);
+    const error          = ref<string | null>(null);
+    const deleting       = ref<string | null>(null);
+    const creating       = ref(false);
+    const submitting     = ref(false);
+    const createError    = ref<string | null>(null);
+    const selected       = ref<RegistryView | null>(null);
+    const pickSearch     = ref('');
+    const form           = ref({ name: '', description: '' });
+    const vars           = reactive<Record<string, string>>({});
+    const envText        = ref('');
+    const brokenIcons    = reactive<Record<string, boolean>>({});
 
     const filtered = computed(() => {
       const q = search.value.trim().toLowerCase();
@@ -139,7 +242,13 @@ export default defineComponent({
       );
     });
 
-    const canCreate = computed(() => !!(form.value.name.trim() && form.value.mcpServerId.trim()));
+    const pickFiltered = computed(() =>
+      registryViews.value.filter((v) => matchesQuery(v, pickSearch.value.trim())),
+    );
+
+    const modalTitle = computed(() => (selected.value ? `Create adapter from ${ selected.value.title }` : 'Pick an MCP server'));
+
+    const canCreate = computed(() => !!(selected.value && form.value.name.trim()));
 
     function statusTone(s?: string): 'success' | 'error' | 'warning' | 'info' | 'neutral' {
       if (!s) return 'neutral';
@@ -154,7 +263,6 @@ export default defineComponent({
       loading.value = true;
       error.value   = null;
       try {
-        // Backend returns JSON `null` for an empty Go slice; coerce to [].
         adapters.value = ((await adaptersApi.list()) || []) as ListAdapter[];
       } catch (e: any) {
         error.value = e?.message || 'Unknown error';
@@ -164,18 +272,24 @@ export default defineComponent({
     }
 
     async function loadRegistry() {
+      loadingRegistry.value = true;
       try {
-        // /browse, not /registry — see MCPRegistry.vue refresh() for context.
-        registryEntries.value = (await registryApi.browse()) || [];
+        const raw = (await registryApi.browse()) || [];
+        registryViews.value = raw.map(toRegistryView);
       } catch {
-        // Non-fatal: dropdown falls back to free-text input.
+        registryViews.value = [];
+      } finally {
+        loadingRegistry.value = false;
       }
     }
 
     function openCreate() {
-      form.value        = { name: '', mcpServerId: '', description: '' };
+      selected.value    = null;
+      pickSearch.value  = '';
+      form.value        = { name: '', description: '' };
       envText.value     = '';
       createError.value = null;
+      for (const k of Object.keys(vars)) delete vars[k];
       creating.value    = true;
       loadRegistry();
     }
@@ -184,15 +298,49 @@ export default defineComponent({
       creating.value = false;
     }
 
+    function selectEntry(v: RegistryView) {
+      selected.value = v;
+      // Default the adapter name to "<id>-adapter" so the user usually just clicks Create.
+      if (!form.value.name) {
+        form.value.name = `${ v.id }-adapter`;
+      }
+      // Seed each secret field with its example (so the user sees the shape and can edit).
+      // Only seed if not already filled — supports going back-and-forth without losing edits.
+      for (const s of v.secrets) {
+        if (vars[s.env] === undefined) {
+          vars[s.env] = s.type === 'bool' ? (s.example.toLowerCase() === 'true' ? 'true' : 'false') : '';
+        }
+      }
+    }
+
+    // When the user clears their selection (Back), drop seeded env values that
+    // came from the previous server's secrets so they don't leak into the
+    // next pick. We keep any free-text additional env vars (envText) intact.
+    watch(selected, (now, prev) => {
+      if (prev && !now) {
+        for (const s of prev.secrets) {
+          delete vars[s.env];
+        }
+      }
+    });
+
     async function submitCreate() {
+      if (!selected.value) return;
       submitting.value  = true;
       createError.value = null;
+      // Build env vars: secret-derived first, additional env text overrides.
+      const env: Record<string, string> = {};
+      for (const s of selected.value.secrets) {
+        const v = vars[s.env];
+        if (v !== undefined && v !== '') env[s.env] = v;
+      }
+      Object.assign(env, parseEnvText(envText.value));
       try {
         await adaptersApi.create({
           name:                 form.value.name.trim(),
-          mcpServerId:          form.value.mcpServerId.trim(),
+          mcpServerId:          selected.value.id,
           description:          form.value.description.trim() || undefined,
-          environmentVariables: parseEnvText(envText.value),
+          environmentVariables: env,
         } as any);
         closeCreate();
         await refresh();
@@ -219,10 +367,12 @@ export default defineComponent({
     onMounted(refresh);
 
     return {
-      adapters, registryEntries, search, loading, error, deleting,
-      creating, submitting, createError, form, envText,
-      filtered, canCreate, statusTone,
-      refresh, openCreate, closeCreate, submitCreate, confirmDelete,
+      adapters, registryViews, loadingRegistry, search, loading, error, deleting,
+      creating, submitting, createError, selected, pickSearch, form, vars, envText,
+      brokenIcons,
+      filtered, pickFiltered, modalTitle, canCreate,
+      statusTone,
+      refresh, openCreate, closeCreate, selectEntry, submitCreate, confirmDelete,
     };
   },
 });
@@ -240,19 +390,10 @@ export default defineComponent({
   font-size:      13px;
   cursor:         pointer;
 }
-.ai-up-btn:disabled {
-  opacity: 0.55;
-  cursor:  not-allowed;
-}
-.ai-up-btn--ghost {
-  background: transparent;
-  color:      var(--primary, #1d4ed8);
-}
-.ai-up-btn--danger {
-  border-color: var(--error, #dc2626);
-  background:   transparent;
-  color:        var(--error, #dc2626);
-}
+.ai-up-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.ai-up-btn--ghost   { background: transparent; color: var(--primary, #1d4ed8); }
+.ai-up-btn--danger  { border-color: var(--error, #dc2626); background: transparent; color: var(--error, #dc2626); }
+
 .ai-up-field {
   display:        flex;
   flex-direction: column;
@@ -263,6 +404,14 @@ export default defineComponent({
 .ai-up-field em {
   color:      var(--error, #dc2626);
   font-style: normal;
+  margin:     0 4px;
+}
+.ai-up-field__env {
+  margin-left: 6px;
+  font-family: var(--font-mono, monospace);
+  font-size:   11px;
+  color:       var(--muted, #888);
+  opacity:     0.7;
 }
 .ai-up-input,
 .ai-up-textarea {
@@ -273,8 +422,27 @@ export default defineComponent({
   color:          var(--body-text, #333);
   font-size:      13px;
 }
-.ai-up-textarea {
-  font-family: var(--font-mono, monospace);
+.ai-up-textarea  { font-family: var(--font-mono, monospace); }
+.ai-up-checkbox  { width: 18px; height: 18px; }
+.ai-up-fieldset {
+  border:         1px solid var(--border, #ddd);
+  border-radius:  6px;
+  padding:        10px 12px 12px;
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
+}
+.ai-up-fieldset__legend {
+  font-size:   12px;
+  font-weight: 600;
+  color:       var(--body-text, #333);
+  margin-bottom: 2px;
+}
+.ai-up-details summary {
+  cursor:    pointer;
+  font-size: 12px;
+  color:     var(--muted, #888);
+  padding:   4px 0;
 }
 .ai-up-banner {
   padding:       8px 10px;
@@ -293,7 +461,9 @@ export default defineComponent({
   font-size:  13px;
 }
 .ai-up-muted {
-  color: var(--muted, #888);
+  color:     var(--muted, #888);
+  font-size: 12px;
+  margin:    0;
 }
 .ai-up-truncate {
   display:       inline-block;
@@ -303,4 +473,151 @@ export default defineComponent({
   white-space:   nowrap;
   font-family:   var(--font-mono, monospace);
 }
+
+// Plain block stack — not flex-column — because a flex-column with
+// max-height applies flex-shrink:1 to children by default, which clipped
+// each row's effective height to less than its content (description and
+// chips rendered past the border, visually overlapping the next row).
+// Block layout sizes each row to its natural content height, and the
+// scroll container does its job without doing layout math on the rows.
+.picker-list {
+  display:       block;
+  max-height:    420px;
+  overflow-y:    auto;
+  overflow-x:    hidden;
+  padding-right: 4px;
+}
+// Rendered as `<div role="button">` (not `<button>`) to dodge Rancher Shell's
+// global button styles. Grid layout (not flex) so the row sizes to the
+// taller of icon vs body — and both `auto` columns simply expand to content.
+.picker-item {
+  display:               grid;
+  grid-template-columns: 40px 1fr;
+  align-items:           start;
+  gap:                   12px;
+  padding:               10px;
+  width:                 100%;
+  min-height:            0;
+  box-sizing:            border-box;
+  background:            transparent;
+  border:                1px solid var(--border, #ddd);
+  border-radius:         6px;
+  text-align:            left;
+  cursor:                pointer;
+  font:                  inherit;
+  color:                 inherit;
+  line-height:           1.4;
+  user-select:           none;
+}
+.picker-item + .picker-item {
+  margin-top: 8px;
+}
+.picker-item:hover {
+  border-color: var(--primary, #1d4ed8);
+  background:   var(--disabled-bg, rgba(136, 136, 136, 0.04));
+}
+.picker-item:focus-visible {
+  outline:        2px solid var(--primary, #1d4ed8);
+  outline-offset: 1px;
+}
+// Pin the icon box so Rancher's global `img { max-width: 100% }` (or
+// similar) can't expand the image past the 40×40 frame and bleed into
+// the next row.
+.picker-item__icon {
+  flex:            0 0 40px;
+  width:           40px;
+  height:          40px;
+  min-width:       40px;
+  min-height:      40px;
+  max-width:       40px;
+  max-height:      40px;
+  border:          1px solid var(--border, #ddd);
+  border-radius:   6px;
+  background:      var(--disabled-bg, rgba(136, 136, 136, 0.08));
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  overflow:        hidden;
+  box-sizing:      border-box;
+}
+.picker-item__icon--small {
+  flex:       0 0 32px;
+  width:      32px;
+  height:     32px;
+  min-width:  32px;
+  min-height: 32px;
+  max-width:  32px;
+  max-height: 32px;
+}
+.picker-item__icon img {
+  display:    block;
+  width:      100%;
+  height:     100%;
+  max-width:  100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.picker-item__initials {
+  font-size:   12px;
+  font-weight: 600;
+  color:       var(--muted, #888);
+}
+.picker-item__body {
+  min-width:      0;        // inside grid, lets text truncate
+  display:        flex;
+  flex-direction: column;
+  gap:            4px;
+}
+.picker-item__title-row {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+}
+.picker-item__title {
+  font-size:     14px;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+}
+.picker-item__desc {
+  margin:      0;
+  font-size:   12px;
+  color:       var(--muted, #888);
+  line-height: 1.35;
+  display:     -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow:    hidden;
+}
+.picker-item__chips {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       4px;
+  align-items: center;
+}
+.picker-item__tag {
+  font-size:     10px;
+  padding:       1px 6px;
+  border-radius: 10px;
+  background:    var(--disabled-bg, rgba(136, 136, 136, 0.08));
+  color:         var(--muted, #888);
+}
+
+.selected-banner {
+  display:        flex;
+  align-items:    center;
+  gap:            10px;
+  padding:        8px 10px;
+  border:         1px solid var(--border, #ddd);
+  border-radius:  6px;
+  background:     var(--disabled-bg, rgba(136, 136, 136, 0.04));
+}
+.selected-banner__body {
+  flex:           1 1 auto;
+  min-width:      0;
+  display:        flex;
+  flex-direction: column;
+}
+.selected-banner__body strong { font-size: 13px; }
+.selected-banner__body small  { font-size: 11px; color: var(--muted, #888); }
 </style>

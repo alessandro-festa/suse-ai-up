@@ -21,7 +21,7 @@
 
     <div v-if="loading && !entries.length" class="ai-up-empty">Loading registry...</div>
 
-    <div v-else-if="!filtered.length && !error" class="ai-up-empty">
+    <div v-else-if="!filteredView.length && !error" class="ai-up-empty">
       <p v-if="search">No registry entries match "{{ search }}".</p>
       <p v-else>Registry is empty. Upload an MCP server entry to populate it.</p>
     </div>
@@ -103,6 +103,7 @@ import AiUpGallery from '../components/AiUpGallery.vue';
 import AiUpPill from '../components/AiUpPill.vue';
 import AiUpModal from '../components/AiUpModal.vue';
 import { registryApi, MCPServer } from '../services/registry';
+import { toRegistryView, matchesQuery, RegistryView } from '../services/registry-view';
 
 const EXAMPLE = `name: weather-mcp
 version: 0.1.0
@@ -116,92 +117,15 @@ meta:
   tags: [demo]
 `;
 
-type RuntimeTone = 'info' | 'success' | 'warning' | 'error' | 'neutral';
-
-interface ViewEntry {
-  id:         string;
-  title:      string;
-  initials:   string;
-  description: string;
-  version:    string;
-  iconUrl:    string;
+// Card enrichment is shared with MCPGateway's adapter picker — see
+// services/registry-view.ts for runtime classification and field mapping.
+interface ViewEntry extends RegistryView {
   iconBroken: boolean;
-  runtime:    { label: string; tone: RuntimeTone; identifier: string };
-  transport:  string;
-  category:   string;
-  tags:       string[];
-  sourceUrl:  string;
-  raw:        MCPServer;
 }
 
-function safeMeta(e: MCPServer): any {
-  return ((e as any)._meta || (e as any).meta || {}) as Record<string, any>;
-}
-
-function asString(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
-
-function classifyRuntime(e: MCPServer): { label: string; tone: RuntimeTone; identifier: string } {
-  const meta    = safeMeta(e);
-  const cmdType = String(meta?.sidecarConfig?.commandType || '').toLowerCase();
-  const pkgs    = Array.isArray((e as any).packages) ? (e as any).packages : [];
-  const firstPkg: any = pkgs[0] || {};
-  const identifier = asString(firstPkg.identifier) || asString((e as any).image);
-
-  const map: Record<string, { label: string; tone: RuntimeTone }> = {
-    docker:    { label: 'Container', tone: 'info' },
-    podman:    { label: 'Container', tone: 'info' },
-    oci:       { label: 'Container', tone: 'info' },
-    npx:       { label: 'Node.js',   tone: 'success' },
-    node:      { label: 'Node.js',   tone: 'success' },
-    npm:       { label: 'Node.js',   tone: 'success' },
-    pip:       { label: 'Python',    tone: 'warning' },
-    pipx:      { label: 'Python',    tone: 'warning' },
-    python:    { label: 'Python',    tone: 'warning' },
-    uvx:       { label: 'Python',    tone: 'warning' },
-    pypi:      { label: 'Python',    tone: 'warning' },
-    go:        { label: 'Go',        tone: 'info' },
-    gomod:     { label: 'Go',        tone: 'info' },
-    cargo:     { label: 'Rust',      tone: 'warning' },
-    'crates.io': { label: 'Rust',    tone: 'warning' },
-    maven:     { label: 'Java',      tone: 'info' },
-    binary:    { label: 'Binary',    tone: 'neutral' },
-  };
-
-  if (cmdType && map[cmdType]) return { ...map[cmdType], identifier };
-  const regType = String(firstPkg.registryType || '').toLowerCase();
-  if (regType && map[regType]) return { ...map[regType], identifier };
-
-  if (/^(docker\.io|ghcr\.io|quay\.io|gcr\.io|mcr\.microsoft\.com|registry\.)/i.test(identifier)) {
-    return { label: 'Container', tone: 'info', identifier };
-  }
-  if (identifier) return { label: 'Binary', tone: 'neutral', identifier };
-  return { label: 'Unknown', tone: 'neutral', identifier: '' };
-}
-
-function toView(e: MCPServer, broken: Record<string, boolean>): ViewEntry {
-  const meta  = safeMeta(e);
-  const about = meta?.about || {};
-  const id    = asString(e.id) || asString(e.name) || '(unnamed)';
-  const title = asString(about.title) || asString(e.name) || id;
-  const description = asString(about.description) || asString(e.description) || '';
-  const version     = asString(e.version);
-  const category    = asString(meta?.category);
-  const sourceUrl   = asString(meta?.source?.project) || asString((e as any).url);
-  const iconUrl     = asString(about.icon);
-  const tags        = Array.isArray(meta?.tags) ? meta.tags.filter((t: any) => typeof t === 'string').slice(0, 6) : [];
-  const pkgs        = Array.isArray((e as any).packages) ? (e as any).packages : [];
-  const transport   = asString(pkgs[0]?.transport?.type);
-  const initials    = (title.match(/[A-Za-z0-9]/g) || []).slice(0, 2).join('').toUpperCase() || '?';
-
-  return {
-    id, title, initials, description, version,
-    iconUrl, iconBroken: !!broken[id],
-    runtime:   classifyRuntime(e),
-    transport, category, tags, sourceUrl,
-    raw: e,
-  };
+function decorate(e: MCPServer, broken: Record<string, boolean>): ViewEntry {
+  const v = toRegistryView(e);
+  return { ...v, iconBroken: !!broken[v.id] };
 }
 
 export default defineComponent({
@@ -221,20 +145,12 @@ export default defineComponent({
 
     const examplePlaceholder = EXAMPLE;
 
-    const filtered = computed(() => {
-      const q = search.value.trim().toLowerCase();
-      if (!q) return entries.value;
-      return entries.value.filter((e) => {
-        const meta = safeMeta(e);
-        return (e.id || '').toLowerCase().includes(q)
-          || (e.name || '').toLowerCase().includes(q)
-          || (e.description || '').toLowerCase().includes(q)
-          || (meta?.about?.title || '').toLowerCase().includes(q)
-          || (Array.isArray(meta?.tags) ? meta.tags.join(' ').toLowerCase() : '').includes(q);
-      });
+    const allViews = computed<ViewEntry[]>(() => entries.value.map((e) => decorate(e, brokenIcons)));
+    const filteredView = computed<ViewEntry[]>(() => {
+      const q = search.value.trim();
+      if (!q) return allViews.value;
+      return allViews.value.filter((v) => matchesQuery(v, q));
     });
-
-    const filteredView = computed<ViewEntry[]>(() => filtered.value.map((e) => toView(e, brokenIcons)));
 
     async function refresh() {
       loading.value = true;
@@ -325,7 +241,7 @@ export default defineComponent({
     return {
       entries, search, loading, error, deleting,
       uploading, submitting, uploadText, uploadError, examplePlaceholder,
-      filtered, filteredView,
+      filteredView,
       refresh, openUpload, closeUpload, submitUpload, confirmDelete,
       onIconError,
     };
