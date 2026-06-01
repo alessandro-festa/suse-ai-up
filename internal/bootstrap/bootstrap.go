@@ -323,6 +323,9 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 	}
 	authHandler := handlers.NewAuthHandler(userAuthService)
 	routeAssignmentHandler := handlers.NewRouteAssignmentHandler(userGroupService, registryStore)
+	if shared.CRClient != nil {
+		routeAssignmentHandler = routeAssignmentHandler.WithCRClient(shared.CRClient, shared.Namespace)
+	}
 	logging.ProxyLogger.Info("UserGroupHandler created: %v", userGroupHandler != nil)
 	logging.ProxyLogger.Info("RouteAssignmentHandler created: %v", routeAssignmentHandler != nil)
 

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/SUSE/suse-ai-up/pkg/models"
 	"github.com/SUSE/suse-ai-up/pkg/services"
 )
@@ -17,10 +19,18 @@ type RegistryStore interface {
 	UpdateMCPServer(id string, updated *models.MCPServer) error
 }
 
-// RouteAssignmentHandler handles route assignment management
+// RouteAssignmentHandler handles route assignment management.
+//
+// crClient + namespace are the P2.4i write-through wiring. When both are
+// set, Create/List/Update/Delete operate on RouteAssignment CRs scoped to
+// an MCPServer via Spec.MCPServerRef (Option 3 from issue #67). When
+// unset, the handler falls back to the legacy in-process registryStore
+// for backwards compatibility with non-operator callers and tests.
 type RouteAssignmentHandler struct {
 	userGroupService *services.UserGroupService
 	registryStore    RegistryStore
+	crClient         client.Client
+	namespace        string
 }
 
 // NewRouteAssignmentHandler creates a new route assignment handler
@@ -29,6 +39,16 @@ func NewRouteAssignmentHandler(userGroupService *services.UserGroupService, regi
 		userGroupService: userGroupService,
 		registryStore:    registryStore,
 	}
+}
+
+// WithCRClient enables CR-backed write-through. When set, write handlers
+// project requests onto RouteAssignment CRs carrying Spec.MCPServerRef so
+// the reconciler projection picks them up as server-scoped assignments.
+// Returns the handler for chaining.
+func (h *RouteAssignmentHandler) WithCRClient(c client.Client, namespace string) *RouteAssignmentHandler {
+	h.crClient = c
+	h.namespace = namespace
+	return h
 }
 
 // CreateRouteAssignmentRequest represents a request to create a route assignment
@@ -104,6 +124,11 @@ func (h *RouteAssignmentHandler) CreateRouteAssignment(w http.ResponseWriter, r 
 		}
 	}
 
+	if h.crClient != nil {
+		h.createRouteAssignmentCR(w, r, &req, serverID, userID)
+		return
+	}
+
 	// Get the server
 	server, err := h.registryStore.GetMCPServer(serverID)
 	if err != nil {
@@ -157,6 +182,11 @@ func (h *RouteAssignmentHandler) ListRouteAssignments(w http.ResponseWriter, r *
 	}
 	serverID := parts[0]
 
+	if h.crClient != nil {
+		h.listRouteAssignmentCRs(w, r, serverID)
+		return
+	}
+
 	// Get the server
 	server, err := h.registryStore.GetMCPServer(serverID)
 	if err != nil {
@@ -206,6 +236,11 @@ func (h *RouteAssignmentHandler) UpdateRouteAssignment(w http.ResponseWriter, r 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "Insufficient permissions to manage route assignments"})
+		return
+	}
+
+	if h.crClient != nil {
+		h.updateRouteAssignmentCR(w, r, serverID, assignmentID, &req)
 		return
 	}
 
@@ -279,6 +314,11 @@ func (h *RouteAssignmentHandler) DeleteRouteAssignment(w http.ResponseWriter, r 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "Insufficient permissions to manage route assignments"})
+		return
+	}
+
+	if h.crClient != nil {
+		h.deleteRouteAssignmentCR(w, r, serverID, assignmentID)
 		return
 	}
 

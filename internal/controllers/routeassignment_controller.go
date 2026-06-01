@@ -311,14 +311,19 @@ func toRegisteredAssignment(a *mcpv1alpha1.RouteAssignment) *auth.RegisteredAssi
 	if perms == "" {
 		perms = mcpv1alpha1.RouteAssignmentPermissionRead
 	}
+	var mcpServerRef string
+	if a.Spec.MCPServerRef != nil {
+		mcpServerRef = a.Spec.MCPServerRef.Name
+	}
 	return &auth.RegisteredAssignment{
-		ID:          a.Namespace + "/" + a.Name,
-		Namespace:   a.Namespace,
-		Name:        a.Name,
-		Users:       users,
-		Groups:      groups,
-		Permissions: perms,
-		AutoSpawn:   a.Spec.AutoSpawn,
+		ID:           a.Namespace + "/" + a.Name,
+		Namespace:    a.Namespace,
+		Name:         a.Name,
+		Users:        users,
+		Groups:       groups,
+		Permissions:  perms,
+		AutoSpawn:    a.Spec.AutoSpawn,
+		MCPServerRef: mcpServerRef,
 	}
 }
 

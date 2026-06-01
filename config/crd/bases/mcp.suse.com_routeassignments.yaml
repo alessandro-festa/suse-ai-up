@@ -96,6 +96,26 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 type: array
+              mcpServerRef:
+                description: |-
+                  MCPServerRef, when set, makes this assignment server-scoped: the
+                  proxy hot path will evaluate it for any Adapter whose
+                  Spec.MCPServerRef matches, in addition to assignments referenced
+                  explicitly via Adapter.Spec.RouteAssignmentRefs. Bridges the
+                  legacy /api/v1/registry/{serverID}/routes HTTP surface onto the
+                  CR-based model without mutating Adapter.Spec.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               permissions:
                 description: |-
                   Permissions selects the access level granted to matched users.

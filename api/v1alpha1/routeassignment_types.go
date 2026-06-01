@@ -62,6 +62,15 @@ type RouteAssignmentSpec struct {
 	// Description is a free-form summary surfaced in UIs.
 	// +optional
 	Description string `json:"description,omitempty"`
+
+	// MCPServerRef, when set, makes this assignment server-scoped: the
+	// proxy hot path will evaluate it for any Adapter whose
+	// Spec.MCPServerRef matches, in addition to assignments referenced
+	// explicitly via Adapter.Spec.RouteAssignmentRefs. Bridges the
+	// legacy /api/v1/registry/{serverID}/routes HTTP surface onto the
+	// CR-based model without mutating Adapter.Spec.
+	// +optional
+	MCPServerRef *corev1.LocalObjectReference `json:"mcpServerRef,omitempty"`
 }
 
 // RouteAssignmentPhase is the high-level rollup of Status.Conditions.

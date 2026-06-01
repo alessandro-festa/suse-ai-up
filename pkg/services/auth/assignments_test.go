@@ -106,6 +106,26 @@ func TestInMemoryAssignmentStore_ListAssignmentsSorted(t *testing.T) {
 	}
 }
 
+func TestInMemoryAssignmentStore_ListByMCPServerRef(t *testing.T) {
+	s := NewInMemoryAssignmentStore()
+	_ = s.UpsertAssignment(&RegisteredAssignment{ID: "ns/r1", Namespace: "ns", MCPServerRef: "srv1"})
+	_ = s.UpsertAssignment(&RegisteredAssignment{ID: "ns/r2", Namespace: "ns", MCPServerRef: "srv1"})
+	_ = s.UpsertAssignment(&RegisteredAssignment{ID: "ns/r3", Namespace: "ns", MCPServerRef: "srv2"})
+	_ = s.UpsertAssignment(&RegisteredAssignment{ID: "ns/r4", Namespace: "ns"}) // no ref
+	_ = s.UpsertAssignment(&RegisteredAssignment{ID: "other/r5", Namespace: "other", MCPServerRef: "srv1"})
+
+	got := s.ListByMCPServerRef("ns", "srv1")
+	if len(got) != 2 || got[0].ID != "ns/r1" || got[1].ID != "ns/r2" {
+		t.Errorf("ListByMCPServerRef(ns, srv1) = %v, want [ns/r1 ns/r2]", ids(got))
+	}
+	if len(s.ListByMCPServerRef("ns", "srv-missing")) != 0 {
+		t.Error("missing ref should return empty")
+	}
+	if len(s.ListByMCPServerRef("ns", "")) != 0 {
+		t.Error("empty ref should not match the assignment with no MCPServerRef set")
+	}
+}
+
 func TestInMemoryAssignmentStore_CopyOnRead(t *testing.T) {
 	s := NewInMemoryAssignmentStore()
 	_ = s.UpsertAssignment(&RegisteredAssignment{ID: "ns/r", Users: []string{"a"}, Groups: []string{"g"}})
