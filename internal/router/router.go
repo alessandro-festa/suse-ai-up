@@ -110,8 +110,18 @@ func Register(r *gin.Engine, svc *bootstrap.AppServices) {
 				})
 			})
 
-			// MCP proxy endpoint - main integration point
-			adapters.Any("/:name/mcp", ginToHTTPHandler(svc.AdapterHandler.HandleMCPProtocol))
+			// MCP proxy endpoint - main integration point.
+			// Wrapped in an auth.UserAuthMiddleware-protected sub-group so
+			// only authenticated callers reach the proxy. The middleware
+			// accepts X-Api-Token / Authorization: Bearer (and X-User-ID
+			// in dev mode), then writes the resolved user ID into
+			// X-User-ID on the request — HandleMCPProtocol still reads
+			// X-User-ID unchanged.
+			protectedMCP := adapters.Group("")
+			protectedMCP.Use(auth.UserAuthMiddleware(svc.UserAuthService))
+			{
+				protectedMCP.Any("/:name/mcp", ginToHTTPHandler(svc.AdapterHandler.HandleMCPProtocol))
+			}
 
 			// Sync capabilities
 			adapters.POST("/:name/sync", ginToHTTPHandler(svc.AdapterHandler.SyncAdapterCapabilities))

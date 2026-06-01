@@ -84,6 +84,14 @@ type AdapterData struct {
 	MCPFunctionality *MCPFunctionality `json:"mcpFunctionality,omitempty"`
 	// For sidecar stdio deployment
 	SidecarConfig *SidecarConfig `json:"sidecarConfig,omitempty"`
+	// MCPServerID names the MCPServer (CR or registry entry) this adapter
+	// binds to. Populated by the Adapter CR projection from Spec.Source.MCPServerRef.
+	// Consumed by the proxy hot path to look up server-scoped RouteAssignments.
+	MCPServerID string `json:"mcpServerId,omitempty" example:"mcp-bugzilla"`
+	// RouteAssignmentRefs names RouteAssignment CRs that explicitly grant
+	// access to this adapter. Populated from Adapter.Spec.RouteAssignmentRefs.
+	// Combined with server-scoped assignments (via MCPServerID) at request time.
+	RouteAssignmentRefs []string `json:"routeAssignmentRefs,omitempty" example:"[\"weather-team-acl\"]"`
 }
 
 // NewAdapterData creates a new AdapterData with defaults

@@ -9,6 +9,7 @@ import (
 	"github.com/SUSE/suse-ai-up/pkg/models"
 	"github.com/SUSE/suse-ai-up/pkg/services"
 	adaptersvc "github.com/SUSE/suse-ai-up/pkg/services/adapters"
+	authsvc "github.com/SUSE/suse-ai-up/pkg/services/auth"
 )
 
 // ErrorResponse represents an error response
@@ -25,10 +26,11 @@ type ErrorResponse struct {
 // for backwards compatibility with non-operator callers (registry service,
 // tests).
 type AdapterHandler struct {
-	adapterService   *adaptersvc.AdapterService
-	userGroupService *services.UserGroupService
-	crClient         client.Client
-	namespace        string
+	adapterService     *adaptersvc.AdapterService
+	userGroupService   *services.UserGroupService
+	crClient           client.Client
+	namespace          string
+	assignmentRegistry authsvc.AssignmentRegistry
 }
 
 // NewAdapterHandler creates a new adapter handler. Use WithCRClient to
@@ -46,6 +48,18 @@ func NewAdapterHandler(adapterService *adaptersvc.AdapterService, userGroupServi
 func (h *AdapterHandler) WithCRClient(c client.Client, namespace string) *AdapterHandler {
 	h.crClient = c
 	h.namespace = namespace
+	return h
+}
+
+// WithAssignmentRegistry enables RouteAssignment ACL enforcement on the
+// MCP hot path. When set, HandleMCPProtocol computes the effective ACL
+// set (explicit Adapter.Spec.RouteAssignmentRefs ∪ server-scoped
+// assignments matching Spec.MCPServerRef) and rejects requests whose
+// authenticated subject doesn't satisfy any assignment at the required
+// permission level. When unset, the hot path is unconditionally
+// allow-all (legacy stub behavior). Returns the handler for chaining.
+func (h *AdapterHandler) WithAssignmentRegistry(r authsvc.AssignmentRegistry) *AdapterHandler {
+	h.assignmentRegistry = r
 	return h
 }
 

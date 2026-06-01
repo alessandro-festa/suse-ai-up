@@ -76,11 +76,17 @@ type AppServices struct {
 // Create/Update/Delete and lets AdapterReconciler own the resulting
 // Deployment+Service. Adapter reads also re-route through the CR
 // projection so kubectl-applied Adapters are visible to GET /api/v1/adapters.
+//
+// AssignmentRegistry (P2.5a) is the reconciler-populated read side of
+// auth.AssignmentStore. The proxy hot path (AdapterHandler.HandleMCPProtocol
+// and follow-up vroute/agent endpoints) consults it to enforce
+// RouteAssignment ACLs at request time without per-request k8s calls.
 type SharedStores struct {
 	MCPServerStore       clients.MCPServerStore
 	PluginServiceManager *plugins.ServiceManager
 	UserStore            authsvc.UserStore
 	GroupStore           authsvc.GroupStore
+	AssignmentRegistry   authsvc.AssignmentRegistry
 	CRClient             client.Client
 	Namespace            string
 }
@@ -295,6 +301,9 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 	adapterHandler := handlers.NewAdapterHandler(adapterService, userGroupService)
 	if shared.CRClient != nil {
 		adapterHandler = adapterHandler.WithCRClient(shared.CRClient, shared.Namespace)
+	}
+	if shared.AssignmentRegistry != nil {
+		adapterHandler = adapterHandler.WithAssignmentRegistry(shared.AssignmentRegistry)
 	}
 	logging.ProxyLogger.Info("AdapterHandler created: %v", adapterHandler != nil)
 	logging.ProxyLogger.Success("AdapterService and AdapterHandler initialized")
