@@ -59,6 +59,7 @@ type AppServices struct {
 	AuthHandler            *handlers.AuthHandler
 	RouteAssignmentHandler *handlers.RouteAssignmentHandler
 	PluginHandler          *handlers.PluginHandler
+	VirtualMCPRouteHandler *handlers.VirtualMCPRouteHandler
 }
 
 // SharedStores carries store instances the caller owns and wants the
@@ -79,8 +80,13 @@ type AppServices struct {
 //
 // AssignmentRegistry (P2.5a) is the reconciler-populated read side of
 // auth.AssignmentStore. The proxy hot path (AdapterHandler.HandleMCPProtocol
-// and follow-up vroute/agent endpoints) consults it to enforce
+// and the vroute/agent endpoints) consults it to enforce
 // RouteAssignment ACLs at request time without per-request k8s calls.
+//
+// VirtualMCPRouteStore (P2.5b) is informational here — the handler
+// itself reads Spec / Status from the controller-runtime client (since
+// Status.ResolvedEntries isn't projected into the store). Bootstrap
+// constructs VirtualMCPRouteHandler only when CRClient is set.
 type SharedStores struct {
 	MCPServerStore       clients.MCPServerStore
 	PluginServiceManager *plugins.ServiceManager
@@ -347,6 +353,20 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		pluginHandler = pluginHandler.WithCRClient(shared.CRClient, shared.Namespace)
 	}
 
+	// VirtualMCPRouteHandler (P2.5b) only exists in CR mode — it reads
+	// VirtualMCPRoute CRs via the informer-cached client. Legacy mode
+	// leaves it nil; router.go skips registering the route in that case.
+	var virtualMCPRouteHandler *handlers.VirtualMCPRouteHandler
+	if shared.CRClient != nil {
+		virtualMCPRouteHandler = handlers.NewVirtualMCPRouteHandler(
+			shared.CRClient,
+			shared.Namespace,
+			shared.AssignmentRegistry,
+			userGroupService,
+			adapterHandler, // *AdapterHandler satisfies handlers.MCPDispatcher
+		)
+	}
+
 	return &AppServices{
 		Cfg:                    cfg,
 		AdapterStore:           adapterStore,
@@ -373,5 +393,6 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		AuthHandler:            authHandler,
 		RouteAssignmentHandler: routeAssignmentHandler,
 		PluginHandler:          pluginHandler,
+		VirtualMCPRouteHandler: virtualMCPRouteHandler,
 	}, nil
 }

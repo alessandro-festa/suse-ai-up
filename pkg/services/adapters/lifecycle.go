@@ -9,6 +9,16 @@ import (
 	"github.com/SUSE/suse-ai-up/pkg/services"
 )
 
+// GetRaw bypasses owner-based permission checks. Callers must have
+// already performed their own authorization (e.g., the
+// VirtualMCPRouteHandler dispatches tools/call to a source adapter on
+// behalf of a user who passed the route's RouteAssignment ACL; the
+// source adapter's CreatedBy is not the right authority in that
+// context). Direct HTTP callers should still use GetAdapter.
+func (as *AdapterService) GetRaw(ctx context.Context, adapterID string) (*models.AdapterResource, error) {
+	return as.store.Get(ctx, adapterID)
+}
+
 // GetAdapter gets an adapter by ID with permission checking
 func (as *AdapterService) GetAdapter(ctx context.Context, userID, adapterID string, userGroupService *services.UserGroupService) (*models.AdapterResource, error) {
 	adapter, err := as.store.Get(ctx, adapterID)

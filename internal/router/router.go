@@ -163,6 +163,19 @@ func Register(r *gin.Engine, svc *bootstrap.AppServices) {
 			registry.DELETE("/:id", svc.RegistryHandler.DeleteMCPServer)
 		}
 
+		// VirtualMCPRoute hot path (P2.5b). Only registered when the
+		// VirtualMCPRouteHandler was constructed (i.e. CR mode); legacy
+		// mode leaves the handler nil and skips the route entirely.
+		// Wrapped in the same auth.UserAuthMiddleware pattern as the
+		// adapter /mcp endpoint.
+		if svc.VirtualMCPRouteHandler != nil {
+			vroutes := v1.Group("/vroutes")
+			vroutes.Use(auth.UserAuthMiddleware(svc.UserAuthService))
+			{
+				vroutes.Any("/:name/mcp", ginToHTTPHandler(svc.VirtualMCPRouteHandler.HandleVirtualMCPProtocol))
+			}
+		}
+
 		// Plugin routes
 		pluginsGroup := v1.Group("/plugins")
 		{
