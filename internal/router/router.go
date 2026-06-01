@@ -176,6 +176,18 @@ func Register(r *gin.Engine, svc *bootstrap.AppServices) {
 			}
 		}
 
+		// Agent hot path (P2.5c). /:name/*protocolPath catches the
+		// agent-protocol-specific suffix so different AgentProtocol
+		// implementations can shape their own URL surface. CR-mode
+		// only — legacy mode leaves the handler nil.
+		if svc.AgentHandler != nil {
+			agentsGroup := v1.Group("/agents")
+			agentsGroup.Use(auth.UserAuthMiddleware(svc.UserAuthService))
+			{
+				agentsGroup.Any("/:name/*protocolPath", ginToHTTPHandler(svc.AgentHandler.HandleAgentProtocol))
+			}
+		}
+
 		// Plugin routes
 		pluginsGroup := v1.Group("/plugins")
 		{

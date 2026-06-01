@@ -23,6 +23,7 @@ import (
 	"github.com/SUSE/suse-ai-up/pkg/scanner"
 	"github.com/SUSE/suse-ai-up/pkg/services"
 	adaptersvc "github.com/SUSE/suse-ai-up/pkg/services/adapters"
+	"github.com/SUSE/suse-ai-up/pkg/services/agents"
 	authsvc "github.com/SUSE/suse-ai-up/pkg/services/auth"
 	registryadmin "github.com/SUSE/suse-ai-up/pkg/services/registry/admin"
 	registryloader "github.com/SUSE/suse-ai-up/pkg/services/registry/loader"
@@ -60,6 +61,7 @@ type AppServices struct {
 	RouteAssignmentHandler *handlers.RouteAssignmentHandler
 	PluginHandler          *handlers.PluginHandler
 	VirtualMCPRouteHandler *handlers.VirtualMCPRouteHandler
+	AgentHandler           *handlers.AgentHandler
 }
 
 // SharedStores carries store instances the caller owns and wants the
@@ -83,6 +85,11 @@ type AppServices struct {
 // and the vroute/agent endpoints) consults it to enforce
 // RouteAssignment ACLs at request time without per-request k8s calls.
 //
+// AgentRegistry (P2.5c) is the reconciler-populated read side of the
+// agents.AgentStore. The /api/v1/agents/{name}/* endpoint looks up
+// RegisteredAgents (Spec.Tools[] projection) in-memory; only the ACL
+// fetch goes through CRClient.
+//
 // VirtualMCPRouteStore (P2.5b) is informational here — the handler
 // itself reads Spec / Status from the controller-runtime client (since
 // Status.ResolvedEntries isn't projected into the store). Bootstrap
@@ -93,6 +100,7 @@ type SharedStores struct {
 	UserStore            authsvc.UserStore
 	GroupStore           authsvc.GroupStore
 	AssignmentRegistry   authsvc.AssignmentRegistry
+	AgentRegistry        agents.AgentRegistry
 	CRClient             client.Client
 	Namespace            string
 }
@@ -367,6 +375,22 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		)
 	}
 
+	// AgentHandler (P2.5c) — CR-mode only. Agent metadata + Spec.Tools[]
+	// come from the in-memory AgentRegistry (zero per-request k8s calls);
+	// Spec.ACL is lazy-fetched via the informer-cached client.
+	var agentHandler *handlers.AgentHandler
+	if shared.CRClient != nil && shared.AgentRegistry != nil {
+		agentHandler = handlers.NewAgentHandler(
+			shared.CRClient,
+			shared.Namespace,
+			shared.AgentRegistry,
+			agents.DefaultRegistry,
+			shared.AssignmentRegistry,
+			userGroupService,
+			adapterHandler, // *AdapterHandler also satisfies agents.MCPDispatcher
+		)
+	}
+
 	return &AppServices{
 		Cfg:                    cfg,
 		AdapterStore:           adapterStore,
@@ -394,5 +418,6 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		RouteAssignmentHandler: routeAssignmentHandler,
 		PluginHandler:          pluginHandler,
 		VirtualMCPRouteHandler: virtualMCPRouteHandler,
+		AgentHandler:           agentHandler,
 	}, nil
 }
