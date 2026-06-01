@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Tear down the suse-ai-up-rancher kind cluster.
+# Tear down the uniproxy-e2e kind cluster.
 set -euo pipefail
 
-CLUSTER_NAME="suse-ai-up-rancher"
+CLUSTER_NAME="uniproxy-e2e"
 
 if kind get clusters | grep -qx "${CLUSTER_NAME}"; then
   echo "==> deleting kind cluster ${CLUSTER_NAME}"

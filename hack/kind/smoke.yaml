@@ -1,0 +1,13 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: uniproxy-smoke
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # HTTP API + docs (matches the Service in charts/suse-ai-up).
+      - containerPort: 8911
+        hostPort: 8911
+        protocol: TCP
+      - containerPort: 3911
+        hostPort: 3911
+        protocol: TCP

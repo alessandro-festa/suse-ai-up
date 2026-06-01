@@ -1,0 +1,8 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: uniproxy-e2e
+nodes:
+  - role: control-plane
+    # No host port mappings — CI runs everything via `kubectl --context`
+    # so it doesn't fight for host ports with other CI jobs / running
+    # services on the runner. Use `kubectl port-forward` when needed.
