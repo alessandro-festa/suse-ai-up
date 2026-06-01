@@ -13,7 +13,7 @@ interface RancherStore {
 }
 
 export function init($plugin: IPlugin, rancherStore: RancherStore) {
-  const { product, virtualType, basicType, weightType } = $plugin.DSL(rancherStore as any, PRODUCT);
+  const { product, virtualType, basicType, weightType, weightGroup } = $plugin.DSL(rancherStore as any, PRODUCT);
 
   rancherStore.registerModule?.(PRODUCT, store);
 
@@ -57,4 +57,11 @@ export function init($plugin: IPlugin, rancherStore: RancherStore) {
   );
 
   PAGES.forEach((p) => weightType(p.name, p.weight, true));
+
+  // Position the whole group above Rancher's root pseudo-group (weight 1000).
+  // Per https://extensions.rancher.io/extensions/next/api/nav/side-menu —
+  // weightType handles within-group ordering; weightGroup positions the group
+  // itself. Without this the group floats at the default position regardless
+  // of how clean the per-entry weights are.
+  weightGroup(PAGE_TYPES.GROUP, 1001, true);
 }

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -396,50 +397,208 @@ func resolvePriority(p *int32) (int32, bool) {
 	return *p, true
 }
 
-// createBulkMCPServerCR is the CR-backed write path for
-// POST /api/v1/registry/upload/bulk. All-or-nothing: every successful
-// Create is appended to `created`; on any subsequent failure we walk
-// `created` in reverse and Delete each (best-effort — secondary errors
-// are logged but not surfaced, since the caller already has a primary
-// cause). No readiness polling — bulk could be 100+ entries and per-
-// entry polling would block the request for minutes.
-func (h *RegistryHandler) createBulkMCPServerCR(c *gin.Context, reqs []UploadRegistryEntryRequest, userID string) {
+// ConflictMode controls how createBulkMCPServerCR handles an entry whose
+// MCPServer CR already exists.
+type ConflictMode string
+
+const (
+	// ConflictAbort (default) — preserve the historical behavior: roll back
+	// any CRs already created in this batch and return 409 with a list of
+	// the conflicting IDs so the UI can prompt the user.
+	ConflictAbort ConflictMode = "abort"
+	// ConflictSkip — leave existing CRs untouched, keep going.
+	ConflictSkip ConflictMode = "skip"
+	// ConflictOverwrite — fetch the existing CR, mutate Spec from the request,
+	// and Update. Equivalent to a per-entry PUT.
+	ConflictOverwrite ConflictMode = "overwrite"
+)
+
+// NormalizeConflictMode maps a raw string from a query param or request
+// field to a valid ConflictMode. Unknown / empty → abort (back-compat).
+func NormalizeConflictMode(s string) ConflictMode {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case string(ConflictSkip):
+		return ConflictSkip
+	case string(ConflictOverwrite):
+		return ConflictOverwrite
+	default:
+		return ConflictAbort
+	}
+}
+
+// BulkEntryResult is one row in the bulk upload response (non-abort modes).
+type BulkEntryResult struct {
+	ID     string `json:"id"`
+	Status string `json:"status"` // created | updated | skipped | failed
+	Error  string `json:"error,omitempty"`
+}
+
+// createBulkMCPServerCR is the CR-backed write path for the bulk and
+// git upload endpoints. Behavior depends on mode:
+//
+//   - abort (default): historical all-or-nothing. First conflict → roll
+//     back any already-created CRs in this batch and return 409 with
+//     {error, conflicts:[]string} so the UI can ask the user how to
+//     proceed.
+//   - skip: existing CRs are left alone, counted as "skipped"; the rest
+//     are created normally. No rollback. Returns 200 with per-entry
+//     results.
+//   - overwrite: existing CRs are fetched and Updated in place (Spec
+//     replaced). Returns 200 with per-entry results.
+//
+// No readiness polling — bulk could be 100+ entries.
+func (h *RegistryHandler) createBulkMCPServerCR(c *gin.Context, reqs []UploadRegistryEntryRequest, userID string, mode ConflictMode) {
 	ctx := c.Request.Context()
-	created := make([]*mcpv1alpha1.MCPServer, 0, len(reqs))
 
-	for i := range reqs {
-		req := &reqs[i]
-		priority, _ := resolvePriority(req.Priority) // already validated by caller
-
-		cr := mcpServerRequestToCR(req, h.namespace, userID)
-		if err := h.crClient.Create(ctx, cr); err != nil {
-			h.rollbackBulkCreates(ctx, created)
-			if apierrors.IsAlreadyExists(err) {
-				c.JSON(http.StatusConflict, gin.H{
-					"error": fmt.Sprintf("MCPServer %q already exists (index %d); bulk upload rolled back", req.ID, i),
+	// Abort mode keeps the historical rollback semantics. Track created CRs
+	// so we can undo them on the first failure.
+	if mode == ConflictAbort {
+		created := make([]*mcpv1alpha1.MCPServer, 0, len(reqs))
+		for i := range reqs {
+			req := &reqs[i]
+			priority, _ := resolvePriority(req.Priority)
+			cr := mcpServerRequestToCR(req, h.namespace, userID)
+			if err := h.crClient.Create(ctx, cr); err != nil {
+				h.rollbackBulkCreates(ctx, created)
+				if apierrors.IsAlreadyExists(err) {
+					conflicts := collectConflicts(ctx, h, reqs[i:])
+					c.JSON(http.StatusConflict, gin.H{
+						"error":     fmt.Sprintf("%d MCPServer(s) already exist; bulk upload rolled back. Choose Overwrite or Skip to continue.", len(conflicts)),
+						"conflicts": conflicts,
+					})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": fmt.Sprintf("Failed to create MCPServer %q (index %d): %v; bulk upload rolled back", req.ID, i, err),
 				})
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to create MCPServer %q (index %d): %v; bulk upload rolled back", req.ID, i, err),
-			})
-			return
+			created = append(created, cr)
+			if err := h.setMCPServerPriorityWithRetry(ctx, cr, priority); err != nil {
+				h.rollbackBulkCreates(ctx, created)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": fmt.Sprintf("Failed to set priority on MCPServer %q (index %d): %v; bulk upload rolled back", req.ID, i, err),
+				})
+				return
+			}
 		}
-		created = append(created, cr)
+		c.JSON(http.StatusCreated, gin.H{
+			"message": fmt.Sprintf("Successfully uploaded %d MCP servers", len(reqs)),
+			"count":   len(reqs),
+		})
+		return
+	}
 
+	// skip / overwrite: continue past conflicts, accumulate per-entry results.
+	results := make([]BulkEntryResult, 0, len(reqs))
+	var created, updated, skipped, failed int
+
+	for i := range reqs {
+		req := &reqs[i]
+		priority, _ := resolvePriority(req.Priority)
+
+		cr := mcpServerRequestToCR(req, h.namespace, userID)
+		err := h.crClient.Create(ctx, cr)
+		switch {
+		case err == nil:
+			results = append(results, BulkEntryResult{ID: req.ID, Status: "created"})
+			created++
+		case apierrors.IsAlreadyExists(err) && mode == ConflictSkip:
+			results = append(results, BulkEntryResult{ID: req.ID, Status: "skipped"})
+			skipped++
+			continue
+		case apierrors.IsAlreadyExists(err) && mode == ConflictOverwrite:
+			if err := h.overwriteMCPServerCR(ctx, req, userID); err != nil {
+				results = append(results, BulkEntryResult{ID: req.ID, Status: "failed", Error: err.Error()})
+				failed++
+				continue
+			}
+			results = append(results, BulkEntryResult{ID: req.ID, Status: "updated"})
+			updated++
+			continue
+		default:
+			results = append(results, BulkEntryResult{ID: req.ID, Status: "failed", Error: err.Error()})
+			failed++
+			continue
+		}
+
+		// Best-effort priority stamp on freshly-created CRs only.
 		if err := h.setMCPServerPriorityWithRetry(ctx, cr, priority); err != nil {
-			h.rollbackBulkCreates(ctx, created)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to set priority on MCPServer %q (index %d): %v; bulk upload rolled back", req.ID, i, err),
-			})
-			return
+			log.Printf("bulk: priority patch failed for %q: %v", req.ID, err)
 		}
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"message": fmt.Sprintf("Successfully uploaded %d MCP servers", len(reqs)),
-		"count":   len(reqs),
+	status := http.StatusOK
+	if failed > 0 {
+		status = http.StatusMultiStatus
+	}
+	c.JSON(status, gin.H{
+		"message": fmt.Sprintf("created=%d updated=%d skipped=%d failed=%d", created, updated, skipped, failed),
+		"count":   created + updated,
+		"created": created,
+		"updated": updated,
+		"skipped": skipped,
+		"failed":  failed,
+		"results": results,
 	})
+}
+
+// overwriteMCPServerCR fetches the existing CR for req.ID and updates its
+// Spec from the request. Mimics PUT /registry/:id but reusable in a loop.
+// Skips registry-owned CRs (OwnerReference Kind=MCPRegistry) so a bulk
+// upload can never trample a CR the operator manages from a source.
+func (h *RegistryHandler) overwriteMCPServerCR(ctx context.Context, req *UploadRegistryEntryRequest, userID string) error {
+	var existing mcpv1alpha1.MCPServer
+	if err := h.crClient.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: req.ID}, &existing); err != nil {
+		return fmt.Errorf("get for overwrite: %w", err)
+	}
+	if owner, owned := isOwnedByMCPRegistry(&existing); owned {
+		return fmt.Errorf("owned by MCPRegistry %q; not overwritten by bulk upload", owner)
+	}
+	applyMCPServerRequestToCR(req, &existing)
+	if userID != "" {
+		if existing.Annotations == nil {
+			existing.Annotations = map[string]string{}
+		}
+		existing.Annotations[mcpServerAnnotationCreatedBy] = userID
+	}
+	if err := h.crClient.Update(ctx, &existing); err != nil {
+		if apierrors.IsConflict(err) {
+			// One retry from a fresh Get.
+			if err := h.crClient.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: req.ID}, &existing); err != nil {
+				return fmt.Errorf("refetch on overwrite: %w", err)
+			}
+			applyMCPServerRequestToCR(req, &existing)
+			if err := h.crClient.Update(ctx, &existing); err != nil {
+				return fmt.Errorf("update after refetch: %w", err)
+			}
+		} else {
+			return fmt.Errorf("update: %w", err)
+		}
+	}
+	if priority, ok := resolvePriority(req.Priority); ok {
+		if err := h.setMCPServerPriorityWithRetry(ctx, &existing, priority); err != nil {
+			log.Printf("overwrite: priority patch failed for %q: %v", req.ID, err)
+		}
+	}
+	return nil
+}
+
+// collectConflicts checks the rest of the batch (starting at index where
+// the abort tripped) and returns the IDs that already exist. Used to
+// populate the 409 response so the UI can show "these N entries collide".
+// Best-effort: errors here are silently ignored (the caller already has a
+// primary 409 to surface).
+func collectConflicts(ctx context.Context, h *RegistryHandler, remaining []UploadRegistryEntryRequest) []string {
+	var out []string
+	for i := range remaining {
+		req := &remaining[i]
+		var cr mcpv1alpha1.MCPServer
+		if err := h.crClient.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: req.ID}, &cr); err == nil {
+			out = append(out, req.ID)
+		}
+	}
+	return out
 }
 
 // rollbackBulkCreates deletes each entry in `created` in reverse order.

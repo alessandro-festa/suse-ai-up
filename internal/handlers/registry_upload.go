@@ -125,7 +125,9 @@ func (h *RegistryHandler) UploadBulkRegistryEntries(c *gin.Context) {
 		if userID == "" {
 			userID = "default-user"
 		}
-		h.createBulkMCPServerCR(c, reqs, userID)
+		// ?on_conflict=abort|skip|overwrite. Default = abort (back-compat).
+		mode := NormalizeConflictMode(c.Query("on_conflict"))
+		h.createBulkMCPServerCR(c, reqs, userID, mode)
 		return
 	}
 
