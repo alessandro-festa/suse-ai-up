@@ -1,0 +1,16 @@
+// SUSE AI Up visual tokens. Mirrors the AIF approach: only one brand
+// color is hardcoded; everything else references Rancher Shell's CSS
+// custom properties so dark/light mode works without overrides.
+
+$brand-accent: #30BA78;
+
+$ai-up-radius:        var(--border-radius, 8px);
+$ai-up-radius-pill:   12px;
+
+$ai-up-gap-xs:  4px;
+$ai-up-gap-sm:  8px;
+$ai-up-gap-md:  10px;
+$ai-up-gap-lg:  15px;
+$ai-up-pad-pg:  20px;
+
+$ai-up-card-min-width: 360px;

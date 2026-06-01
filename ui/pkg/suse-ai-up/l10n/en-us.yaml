@@ -1,0 +1,15 @@
+# Rancher Shell looks up the product label as `product.<slug>`. We keep
+# the slug `suse-ai-up` (aligned with the repo, Helm release, Service
+# name) and override only the display label.
+product:
+  suse-ai-up: 'Universal Proxy'
+
+suse-ai-up:
+  label: 'Universal Proxy'
+  nav:
+    home: 'Home'
+    mcp-gateway: 'MCP Gateway'
+    mcp-registry: 'MCP Registry'
+    virtual-mcp: 'Virtual MCP'
+    smart-agents: 'Smart Agents'
+    settings-up: 'Settings'

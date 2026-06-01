@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40" width="160" height="40" role="img" aria-label="SUSE AI Up">
+  <g fill="none" stroke="none">
+    <rect x="2" y="6" width="28" height="28" rx="6" fill="#30BA78"/>
+    <path d="M9 23 L14 28 L23 14" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <text x="42" y="26" font-family="Verdana,Geneva,sans-serif" font-size="18" font-weight="700" fill="currentColor">SUSE AI Up</text>
+  </g>
+</svg>
