@@ -154,7 +154,8 @@ export default defineComponent({
       loading.value = true;
       error.value   = null;
       try {
-        adapters.value = (await adaptersApi.list()) as ListAdapter[];
+        // Backend returns JSON `null` for an empty Go slice; coerce to [].
+        adapters.value = ((await adaptersApi.list()) || []) as ListAdapter[];
       } catch (e: any) {
         error.value = e?.message || 'Unknown error';
       } finally {
@@ -164,7 +165,8 @@ export default defineComponent({
 
     async function loadRegistry() {
       try {
-        registryEntries.value = await registryApi.list();
+        // /browse, not /registry — see MCPRegistry.vue refresh() for context.
+        registryEntries.value = (await registryApi.browse()) || [];
       } catch {
         // Non-fatal: dropdown falls back to free-text input.
       }
