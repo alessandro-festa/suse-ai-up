@@ -23,18 +23,33 @@ curl -X POST "http://<SERVICE-IP>:8911/api/v1/adapters" \
 - Kubernetes 1.19+
 - Helm 3.0+
 
+## CRDs
+
+The chart bundles its nine `mcp.suse.com/v1alpha1` CRDs (Adapter, Agent, Group, MCPRegistry, MCPServer, Plugin, RouteAssignment, User, VirtualMCPRoute) in `crds/crds.yaml`. Helm 3 installs that directory automatically on `helm install`, before any templates render, so the manager comes up with all informer caches resolvable.
+
+**Helm upgrade limitation:** Helm does **not** re-apply files in `crds/` on `helm upgrade` — this is a deliberate Helm 3 design choice to avoid surprise schema changes. When the CRDs change between chart versions, re-apply them manually before upgrading:
+
+```bash
+kubectl apply -f charts/suse-ai-up/crds/crds.yaml
+helm upgrade suse-ai-up ./charts/suse-ai-up --namespace suse-ai-up
+```
+
+The `make helm-sync-crds` target regenerates `crds/crds.yaml` from `config/crd/` (the kubebuilder source of truth) via kustomize. `make helm-install` and `make helm-upgrade` both depend on it, so the bundled CRDs stay in sync with the Go API types.
+
 ## Installing the Chart
 
 To install the chart with the release name `suse-ai-up`:
 
 ```bash
-helm install suse-ai-up ./charts/suse-ai-up
+helm install suse-ai-up ./charts/suse-ai-up --namespace suse-ai-up --create-namespace
+# or, regenerating CRDs from current code first:
+make helm-install
 ```
 
 Alternatively, if you have the chart packaged:
 
 ```bash
-helm install suse-ai-up suse-ai-up-0.0.1.tgz
+helm install suse-ai-up suse-ai-up-0.0.1.tgz --namespace suse-ai-up --create-namespace
 ```
 
 ## Uninstalling the Chart
@@ -42,7 +57,13 @@ helm install suse-ai-up suse-ai-up-0.0.1.tgz
 To uninstall/delete the `suse-ai-up` deployment:
 
 ```bash
-helm uninstall suse-ai-up
+helm uninstall suse-ai-up --namespace suse-ai-up
+```
+
+CRDs are intentionally left in place to avoid accidental data loss on rollback. Remove them explicitly when you're sure:
+
+```bash
+kubectl delete -f charts/suse-ai-up/crds/crds.yaml
 ```
 
 ## Configuration
