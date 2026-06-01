@@ -36,6 +36,12 @@ type RegisteredAssignment struct {
 	Groups      []string
 	Permissions mcpv1alpha1.RouteAssignmentPermission
 	AutoSpawn   bool
+	// MCPServerRef, when non-empty, names an MCPServer in the same
+	// namespace that this assignment auto-applies to. Populated from
+	// RouteAssignmentSpec.MCPServerRef.Name by the reconciler; consumed
+	// by the proxy hot path's union evaluation (P2.5/#29) and by the
+	// HTTP shim's server-scoped list endpoint.
+	MCPServerRef string
 }
 
 // AssignmentRegistry is the read side.
@@ -43,6 +49,12 @@ type AssignmentRegistry interface {
 	GetAssignment(id string) (*RegisteredAssignment, bool)
 	ListAssignments() []*RegisteredAssignment
 	ListByNamespace(namespace string) []*RegisteredAssignment
+	// ListByMCPServerRef returns the assignments in namespace whose
+	// MCPServerRef matches name. Empty slice when no matches. The
+	// proxy hot path uses this to compute the effective ACL set as
+	// the union of explicit Adapter.Spec.RouteAssignmentRefs and
+	// server-scoped assignments.
+	ListByMCPServerRef(namespace, name string) []*RegisteredAssignment
 }
 
 // AssignmentStore extends AssignmentRegistry with mutation.
@@ -107,6 +119,25 @@ func (s *InMemoryAssignmentStore) ListByNamespace(namespace string) []*Registere
 	out := make([]*RegisteredAssignment, 0)
 	for _, a := range s.assignments {
 		if a.Namespace == namespace {
+			out = append(out, copyAssignment(a))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+func (s *InMemoryAssignmentStore) ListByMCPServerRef(namespace, name string) []*RegisteredAssignment {
+	// Guard the empty-name case so a caller with an unset MCPServerRef
+	// (e.g. a SidecarConfig-only Adapter) does not accidentally collect
+	// every assignment whose MCPServerRef happens to also be unset.
+	if name == "" {
+		return []*RegisteredAssignment{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*RegisteredAssignment, 0)
+	for _, a := range s.assignments {
+		if a.Namespace == namespace && a.MCPServerRef == name {
 			out = append(out, copyAssignment(a))
 		}
 	}
