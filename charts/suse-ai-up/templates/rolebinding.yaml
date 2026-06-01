@@ -30,4 +30,21 @@ roleRef:
   kind: Role
   name: {{ include "suse-ai-up.fullname" . }}-sidecar-role
   apiGroup: rbac.authorization.k8s.io
+---
+# Pairs with the leader-election Role in role.yaml (P2.7).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "suse-ai-up.fullname" . }}-leader-election-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "suse-ai-up.labels" . | nindent 4 }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "suse-ai-up.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "suse-ai-up.fullname" . }}-leader-election-role
+  apiGroup: rbac.authorization.k8s.io
 {{- end }}

@@ -39,6 +39,16 @@ Override the default by setting a `command:` / `args:` block in your chart value
 
 The chart bundles its nine `mcp.suse.com/v1alpha1` CRDs (Adapter, Agent, Group, MCPRegistry, MCPServer, Plugin, RouteAssignment, User, VirtualMCPRoute) in `crds/crds.yaml`. Helm 3 installs that directory automatically on `helm install`, before any templates render, so the manager comes up with all informer caches resolvable.
 
+## Default MCPRegistry CR
+
+P2.7 adds `templates/mcpregistry-default.yaml`, which renders an `MCPRegistry` CR named `<release>-default` whose `Source.ConfigMapRef` points at the chart's bundled registry ConfigMap (`<release>-registry`). After install, `MCPRegistryReconciler` materializes child `MCPServer` CRs from the bundled content, so the registry is visible to the operator without manual action.
+
+Toggle via `registry.bundledAsCR` (default `true`). Disable if you manage `MCPRegistry` CRs out-of-band.
+
+## Leader election
+
+`manager.leaderElect` (default `true`) wires the consolidated binary's `all` subcommand with `--leader-elect`, so deploying multiple replicas funnels reconciliation through a single leader (the HTTP shim serves traffic on every replica regardless — only the controller-runtime reconcilers gate on the lease). The RBAC for the `coordination.k8s.io/leases` resource lives in `templates/role.yaml` as a namespace-scoped `Role`.
+
 **Helm upgrade limitation:** Helm does **not** re-apply files in `crds/` on `helm upgrade` — this is a deliberate Helm 3 design choice to avoid surprise schema changes. When the CRDs change between chart versions, re-apply them manually before upgrading:
 
 ```bash
