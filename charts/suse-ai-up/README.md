@@ -23,6 +23,18 @@ curl -X POST "http://<SERVICE-IP>:8911/api/v1/adapters" \
 - Kubernetes 1.19+
 - Helm 3.0+
 
+## Binary subcommands
+
+The chart's container image runs `suse-ai-up`, which dispatches on the first argument:
+
+| Subcommand | Behavior |
+|------------|----------|
+| `all` (default) | Controller-runtime manager **+** HTTP shim in-process. Production path. |
+| `manager` | Reconcilers only. No HTTP port. Useful for scaling the control plane separately. |
+| `serve` | HTTP shim only. No kube-apiserver connection. Legacy file-mode. |
+
+Override the default by setting a `command:` / `args:` block in your chart values if you need to deploy `manager` and `serve` as separate Deployments — note that the in-process projection stores (RouteAssignment ACL, Agent registry, etc.) are populated by the manager process, so split deployments today fail-open on those ACLs. The recommended production shape is the default `all` for now.
+
 ## CRDs
 
 The chart bundles its nine `mcp.suse.com/v1alpha1` CRDs (Adapter, Agent, Group, MCPRegistry, MCPServer, Plugin, RouteAssignment, User, VirtualMCPRoute) in `crds/crds.yaml`. Helm 3 installs that directory automatically on `helm install`, before any templates render, so the manager comes up with all informer caches resolvable.

@@ -6,12 +6,6 @@ you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
 */
 
 package main
@@ -32,16 +26,15 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	mcpv1alpha1 "github.com/SUSE/suse-ai-up/api/v1alpha1"
-	"github.com/SUSE/suse-ai-up/internal/bootstrap"
 	"github.com/SUSE/suse-ai-up/internal/config"
 	"github.com/SUSE/suse-ai-up/internal/controllers"
 	"github.com/SUSE/suse-ai-up/internal/handlers"
-	"github.com/SUSE/suse-ai-up/internal/httpserver"
 	"github.com/SUSE/suse-ai-up/pkg/clients"
 	"github.com/SUSE/suse-ai-up/pkg/plugins"
 	"github.com/SUSE/suse-ai-up/pkg/services/agents"
@@ -57,38 +50,69 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
 	utilruntime.Must(mcpv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
-func main() {
-	var metricsAddr string
-	var enableLeaderElection bool
-	var probeAddr string
-	var secureMetrics bool
-	var enableHTTP2 bool
-	var tlsOpts []func(*tls.Config)
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
+// managerOpts holds the parsed values from commonFlags. Shared between
+// runAll and runManager so both subcommands take the same flag set.
+type managerOpts struct {
+	MetricsAddr          string
+	ProbeAddr            string
+	EnableLeaderElection bool
+	SecureMetrics        bool
+	EnableHTTP2          bool
+	WorkloadNamespace    string
+}
+
+// commonFlags registers the kube/auth flags shared by the manager and
+// all subcommands and returns the populated managerOpts after Parse.
+// Also installs the zap logger.
+func commonFlags() managerOpts {
+	var opts managerOpts
+	flag.StringVar(&opts.MetricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
+	flag.StringVar(&opts.ProbeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.BoolVar(&opts.EnableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(&secureMetrics, "metrics-secure", true,
+	flag.BoolVar(&opts.SecureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
-	flag.BoolVar(&enableHTTP2, "enable-http2", false,
+	flag.BoolVar(&opts.EnableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	var workloadNamespace string
-	flag.StringVar(&workloadNamespace, "workload-namespace", "suse-ai-up-mcp",
+	flag.StringVar(&opts.WorkloadNamespace, "workload-namespace", "suse-ai-up-mcp",
 		"Namespace where adapter Deployments/Services are created.")
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
+	zapOpts := zap.Options{Development: true}
+	zapOpts.BindFlags(flag.CommandLine)
 	flag.Parse()
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+	return opts
+}
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+// managerComponents bundles the controller-runtime Manager together with
+// the in-process stores it populates. runAll passes these into the HTTP
+// shim's SharedStores so handlers and reconcilers share state; runManager
+// drops the stores on the floor (the manager binary is correct without
+// them, just wasteful — reconciling CRs into stores no consumer reads).
+type managerComponents struct {
+	Mgr                  manager.Manager
+	MCPServerStore       clients.MCPServerStore
+	UserStore            *auth.InMemoryUserStore
+	GroupStore           *auth.InMemoryGroupStore
+	AssignmentStore      *auth.InMemoryAssignmentStore
+	AgentStore           *agents.InMemoryAgentStore
+	RouteStore           *virtualmcp.InMemoryRouteStore
+	PluginServiceManager *plugins.ServiceManager
+	HTTPConfig           *config.Config
+	Namespace            string
+}
+
+// buildManager constructs the controller-runtime Manager and registers
+// every reconciler. Shared by runManager and runAll. Hard-exits via
+// setupLog on any failure — keeps the historical fail-fast behavior of
+// the pre-refactor cmd/manager.
+func buildManager(opts managerOpts) managerComponents {
+	tlsOpts := []func(*tls.Config){}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -96,77 +120,58 @@ func main() {
 	// Rapid Reset CVEs. For more information see:
 	// - https://github.com/advisories/GHSA-qppj-fm5r-hxr3
 	// - https://github.com/advisories/GHSA-4374-p667-p6c8
-	disableHTTP2 := func(c *tls.Config) {
-		setupLog.Info("disabling http/2")
-		c.NextProtos = []string{"http/1.1"}
+	if !opts.EnableHTTP2 {
+		tlsOpts = append(tlsOpts, func(c *tls.Config) {
+			setupLog.Info("disabling http/2")
+			c.NextProtos = []string{"http/1.1"}
+		})
 	}
 
-	if !enableHTTP2 {
-		tlsOpts = append(tlsOpts, disableHTTP2)
-	}
+	webhookServer := webhook.NewServer(webhook.Options{TLSOpts: tlsOpts})
 
-	webhookServer := webhook.NewServer(webhook.Options{
-		TLSOpts: tlsOpts,
-	})
-
-	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
+	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'.
 	// More info:
 	// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.1/pkg/metrics/server
 	// - https://book.kubebuilder.io/reference/metrics.html
 	metricsServerOptions := metricsserver.Options{
-		BindAddress:   metricsAddr,
-		SecureServing: secureMetrics,
+		BindAddress:   opts.MetricsAddr,
+		SecureServing: opts.SecureMetrics,
 		TLSOpts:       tlsOpts,
 	}
-
-	if secureMetrics {
+	if opts.SecureMetrics {
 		// FilterProvider is used to protect the metrics endpoint with authn/authz.
 		// These configurations ensure that only authorized users and service accounts
-		// can access the metrics endpoint. The RBAC are configured in 'config/rbac/kustomization.yaml'. More info:
+		// can access the metrics endpoint. The RBAC are configured in 'config/rbac/kustomization.yaml'.
 		// https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.1/pkg/metrics/filters#WithAuthenticationAndAuthorization
 		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
-
-		// TODO(user): If CertDir, CertName, and KeyName are not specified, controller-runtime will automatically
-		// generate self-signed certificates for the metrics server. While convenient for development and testing,
-		// this setup is not recommended for production.
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
+		HealthProbeBindAddress: opts.ProbeAddr,
+		LeaderElection:         opts.EnableLeaderElection,
 		LeaderElectionID:       "d0141a56.suse.com",
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
+	// AdapterReconciler — sidecar Deployment+Service ownership.
 	if err = (&controllers.AdapterReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
-		WorkloadNamespace: workloadNamespace,
+		WorkloadNamespace: opts.WorkloadNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to set up controller", "controller", "Adapter")
 		os.Exit(1)
 	}
 
-	// In-process MCP server cache. Today only the operator binary uses it;
-	// §2.4 (HTTP shim rewire) will share this same instance with the legacy
-	// data plane so the controller and the HTTP path see the same servers.
+	// In-process MCP server cache. The HTTP shim (P2.4) consumes this
+	// via SharedStores so the controller and the HTTP path see the same
+	// servers.
 	mcpServerStore := clients.NewInMemoryMCPServerStore()
 
 	if err = (&controllers.MCPRegistryReconciler{
@@ -202,16 +207,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// In-process Agent registry the §2.4 HTTP shim will share for
+	// In-process Agent registry the HTTP shim (P2.5c) shares for
 	// request-time agent lookup. agents.DefaultRegistry holds the
-	// AgentProtocol implementations (smartagents today) the reconciler
-	// validates Spec.Protocol against.
+	// AgentProtocol implementations the reconciler validates
+	// Spec.Protocol against.
 	agentStore := agents.NewInMemoryAgentStore()
 
 	if err = (&controllers.AgentReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
-		WorkloadNamespace: workloadNamespace,
+		WorkloadNamespace: opts.WorkloadNamespace,
 		Store:             agentStore,
 		Protocols:         agents.DefaultRegistry,
 	}).SetupWithManager(mgr); err != nil {
@@ -220,8 +225,8 @@ func main() {
 	}
 
 	// In-process auth projection stores. The reconcilers reflect the
-	// validated CR state here; §2.4 (HTTP shim rewire) consumes them
-	// so request-time permission checks see the live cluster state.
+	// validated CR state here; the HTTP shim consumes them so request-time
+	// permission checks see the live cluster state.
 	userStore := auth.NewInMemoryUserStore()
 	groupStore := auth.NewInMemoryGroupStore()
 	assignmentStore := auth.NewInMemoryAssignmentStore()
@@ -252,14 +257,9 @@ func main() {
 	}
 
 	// Plugin registry shared between PluginReconciler and the HTTP
-	// PluginHandler (P2.4/PR2). One *plugins.ServiceManager instance
-	// is constructed here, registered as the reconciler's Store so
-	// reconciled Plugin CRs project into it, and passed to bootstrap
-	// via SharedStores so the HTTP /api/v1/plugins/* handlers query
-	// the same in-process map. DefaultRegistryManager is a stateless
-	// wrapper over mcpServerStore; bootstrap builds another one for
-	// the registry-admin path — they share the underlying store, so
-	// both views stay coherent.
+	// PluginHandler. DefaultRegistryManager is a stateless wrapper over
+	// mcpServerStore; bootstrap builds another one for the registry-admin
+	// path — they share the underlying store, so both views stay coherent.
 	httpCfg := config.LoadConfig()
 	pluginRegistryManager := handlers.NewDefaultRegistryManager(mcpServerStore)
 	pluginServiceManager := plugins.NewServiceManager(httpCfg, pluginRegistryManager)
@@ -276,28 +276,6 @@ func main() {
 	}
 	// +kubebuilder:scaffold:builder
 
-	// HTTP server (formerly cmd/uniproxy) runs inside the operator
-	// process so handlers and reconcilers share the same in-process
-	// state. P2.4/PR1 wired MCPServerStore; PR2 added
-	// PluginServiceManager; PR3 plumbs the user/group auth projections
-	// so GET /api/v1/users and /api/v1/groups surface CR-reconciled
-	// entries. P2.5a exposes assignmentStore so the proxy hot paths can
-	// enforce RouteAssignment ACLs at request time without per-request
-	// k8s calls.
-	if err := mgr.Add(httpserver.NewRunnable(httpCfg, bootstrap.SharedStores{
-		MCPServerStore:       mcpServerStore,
-		PluginServiceManager: pluginServiceManager,
-		UserStore:            userStore,
-		GroupStore:           groupStore,
-		AssignmentRegistry:   assignmentStore,
-		AgentRegistry:        agentStore,
-		CRClient:             mgr.GetClient(),
-		Namespace:            workloadNamespace,
-	})); err != nil {
-		setupLog.Error(err, "unable to add HTTP server runnable")
-		os.Exit(1)
-	}
-
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
@@ -307,8 +285,31 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	return managerComponents{
+		Mgr:                  mgr,
+		MCPServerStore:       mcpServerStore,
+		UserStore:            userStore,
+		GroupStore:           groupStore,
+		AssignmentStore:      assignmentStore,
+		AgentStore:           agentStore,
+		RouteStore:           routeStore,
+		PluginServiceManager: pluginServiceManager,
+		HTTPConfig:           httpCfg,
+		Namespace:            opts.WorkloadNamespace,
+	}
+}
+
+// runManager is the `uniproxy manager` subcommand. Builds the manager
+// without the HTTP runnable. The stores are still populated by the
+// reconcilers but no in-process consumer reads them — fine for a
+// manager-only deployment whose only job is reconciling CRs into owned
+// k8s resources.
+func runManager() {
+	opts := commonFlags()
+	cmps := buildManager(opts)
+
+	setupLog.Info("starting manager (no HTTP shim — `uniproxy manager`)")
+	if err := cmps.Mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

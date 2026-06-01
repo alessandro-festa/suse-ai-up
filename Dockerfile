@@ -1,8 +1,10 @@
 # syntax=docker/dockerfile:1
 #
 # Single-stage Dockerfile producing the consolidated operator image. The
-# manager binary hosts both the controller-runtime reconcilers and the
-# HTTP server formerly served by cmd/uniproxy — see P2.4/PR1 in issue #28.
+# uniproxy binary dispatches on subcommand: `all` (default) runs the
+# controller-runtime reconcilers and the HTTP server in-process;
+# `manager` runs reconcilers only; `serve` runs the HTTP server only in
+# legacy file-mode. See P2.6 in issue #30.
 #
 # Base is bci-base (not distroless) because the HTTP server needs to write
 # initial users/groups, mount the registry config + docs ConfigMaps, and
@@ -21,7 +23,7 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -ldflags="-w -s" -o /out/manager ./cmd/manager
+RUN go build -ldflags="-w -s" -o /out/uniproxy ./cmd/uniproxy
 
 # --- runtime --------------------------------------------------------------
 FROM registry.suse.com/bci/bci-base:16.0
@@ -31,7 +33,7 @@ RUN zypper --non-interactive install ca-certificates timezone && \
 
 WORKDIR /home/mcpuser
 
-COPY --from=builder /out/manager              ./suse-ai-up
+COPY --from=builder /out/uniproxy             ./suse-ai-up
 COPY --from=builder /app/hack/registry        ./hack/registry
 COPY --from=builder /app/docs                 ./docs
 

@@ -2,11 +2,17 @@
 # suse-ai-up Makefile
 #
 # Single primary binary:
-#   - manager (Kubernetes operator + HTTP data plane) → cmd/manager
+#   - uniproxy (Kubernetes operator + HTTP data plane) → cmd/uniproxy
 #
-# P2.4/PR1 consolidated the HTTP server (formerly cmd/uniproxy) into the
-# manager process. Shared targets (test, fmt, vet, lint, manifests, generate)
-# operate on the whole module.
+# Output binary is named `suse-ai-up`. Subcommands:
+#   ./suse-ai-up         # all (default) — manager + HTTP shim in-process
+#   ./suse-ai-up manager # controller-runtime only, no HTTP
+#   ./suse-ai-up serve   # HTTP shim only, no controller-runtime (legacy)
+#
+# P2.6 (#30) consolidated the previous cmd/manager + cmd/registry +
+# cmd/plugins layout into a single subcommand-dispatched binary. Shared
+# targets (test, fmt, vet, lint, manifests, generate) operate on the
+# whole module.
 # =============================================================================
 
 # ---- Image / version ---------------------------------------------------------
@@ -38,7 +44,7 @@ help: ## Display this help.
 
 .PHONY: build
 build: ## Build the consolidated manager binary.
-	go build -o suse-ai-up ./cmd/manager
+	go build -o suse-ai-up ./cmd/uniproxy
 
 .PHONY: clean
 clean: ## Remove built binaries.
@@ -131,29 +137,55 @@ generate: controller-gen ## Generate DeepCopy methods for API types.
 
 ##@ Operator — build / run
 
+.PHONY: build-uniproxy
+build-uniproxy: manifests generate ## Build the uniproxy binary into bin/uniproxy.
+	go build -o bin/uniproxy ./cmd/uniproxy
+
+# Backward-compat alias for the pre-P2.6 target name. Anything in CI / docs
+# that still calls `make build-manager` continues to work; new callers
+# should use `make build-uniproxy`.
 .PHONY: build-manager
-build-manager: manifests generate ## Build the manager binary into bin/manager.
-	go build -o bin/manager ./cmd/manager
+build-manager: build-uniproxy ## Deprecated alias for build-uniproxy.
+
+.PHONY: run-uniproxy
+run-uniproxy: manifests generate ## Run uniproxy from your host against ~/.kube/config (defaults to `all`).
+	go run ./cmd/uniproxy
 
 .PHONY: run-manager
-run-manager: manifests generate ## Run the manager from your host against ~/.kube/config.
-	go run ./cmd/manager
+run-manager: manifests generate ## Run uniproxy in manager-only mode (no HTTP).
+	go run ./cmd/uniproxy manager
 
-.PHONY: docker-build-manager
-docker-build-manager: ## Build the manager docker image.
+.PHONY: run-serve
+run-serve: manifests generate ## Run uniproxy in HTTP-only mode (no controller-runtime).
+	go run ./cmd/uniproxy serve
+
+.PHONY: docker-build-uniproxy
+docker-build-uniproxy: ## Build the uniproxy docker image.
 	$(CONTAINER_TOOL) build -t ${IMG} .
 
-.PHONY: docker-push-manager
-docker-push-manager: ## Push the manager docker image.
+# Backward-compat alias.
+.PHONY: docker-build-manager
+docker-build-manager: docker-build-uniproxy ## Deprecated alias for docker-build-uniproxy.
+
+.PHONY: docker-push-uniproxy
+docker-push-uniproxy: ## Push the uniproxy docker image.
 	$(CONTAINER_TOOL) push ${IMG}
 
+# Backward-compat alias.
+.PHONY: docker-push-manager
+docker-push-manager: docker-push-uniproxy ## Deprecated alias for docker-push-uniproxy.
+
 PLATFORMS ?= linux/arm64,linux/amd64
-.PHONY: docker-buildx-manager
-docker-buildx-manager: ## Build and push the manager image for multiple platforms.
+.PHONY: docker-buildx-uniproxy
+docker-buildx-uniproxy: ## Build and push the uniproxy image for multiple platforms.
 	- $(CONTAINER_TOOL) buildx create --name suse-ai-up-builder
 	$(CONTAINER_TOOL) buildx use suse-ai-up-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} .
 	- $(CONTAINER_TOOL) buildx rm suse-ai-up-builder
+
+# Backward-compat alias.
+.PHONY: docker-buildx-manager
+docker-buildx-manager: docker-buildx-uniproxy ## Deprecated alias for docker-buildx-uniproxy.
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated install YAML (CRDs + manager).
