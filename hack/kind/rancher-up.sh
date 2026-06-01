@@ -3,12 +3,12 @@
 # Pattern adapted from ~/Documents/dev/aif-nc/hack/kind/.
 #
 # Defaults: docker runtime (Rancher Desktop). Override with
-#   KIND_EXPERIMENTAL_PROVIDER=podman ./up.sh
+#   KIND_EXPERIMENTAL_PROVIDER=podman ./rancher-up.sh
 # Override versions via RANCHER_VERSION / CERT_MANAGER_VERSION env vars.
 
 set -euo pipefail
 
-CLUSTER_NAME="suse-ai-up-rancher"
+CLUSTER_NAME="uniproxy-rancher"
 RANCHER_VERSION="${RANCHER_VERSION:-v2.14.1}"
 CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.20.2}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -76,7 +76,7 @@ BOOTSTRAP_PWD="$(${KUBECTL[@]} get secret --namespace cattle-system bootstrap-se
 
 cat <<EOF
 
-==> suse-ai-up-rancher ready
+==> uniproxy-rancher ready
     kubectl context:  ${KUBECONTEXT}
     Rancher URL:      https://${RANCHER_HOSTNAME}
     Bootstrap pwd:    ${BOOTSTRAP_PWD}
@@ -90,5 +90,5 @@ Next steps to load the suse-ai-up UI extension:
   5. In another shell, from the repo root:
        cd ui && yarn build-pkg suse-ai-up && yarn serve-pkgs
 
-Tear down with: hack/kind/rancher/down.sh
+Tear down with: hack/kind/rancher-down.sh
 EOF

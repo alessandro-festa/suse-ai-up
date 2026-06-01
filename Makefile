@@ -193,6 +193,55 @@ build-installer: manifests generate kustomize ## Generate a consolidated install
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
+##@ Kind smoke clusters (P2.8)
+
+# Three named clusters (see hack/kind/README.md): uniproxy-smoke for
+# operator dev smoke, uniproxy-rancher for the UI extension dev loop,
+# uniproxy-e2e for CI. IMG defaults to suse-ai-up-manager:latest from
+# the IMG variable at the top of this file.
+
+.PHONY: smoke-up
+smoke-up: ## Bring up the uniproxy-smoke kind cluster + helm-install the chart.
+	IMG=$(IMG) hack/kind/smoke-up.sh
+
+.PHONY: smoke-load
+smoke-load: ## Load $(IMG) into the existing uniproxy-smoke kind cluster.
+	kind load docker-image $(IMG) --name uniproxy-smoke
+
+.PHONY: smoke-down
+smoke-down: ## Tear down the uniproxy-smoke kind cluster.
+	hack/kind/smoke-down.sh
+
+.PHONY: rancher-up
+rancher-up: ## Bring up the uniproxy-rancher kind cluster + Rancher for UI testing.
+	hack/kind/rancher-up.sh
+
+.PHONY: rancher-load
+rancher-load: ## Load $(IMG) into the existing uniproxy-rancher kind cluster.
+	kind load docker-image $(IMG) --name uniproxy-rancher
+
+.PHONY: rancher-down
+rancher-down: ## Tear down the uniproxy-rancher kind cluster.
+	hack/kind/rancher-down.sh
+
+.PHONY: rancher-url
+rancher-url: ## Print the Rancher UI URL for uniproxy-rancher.
+	@echo "https://rancher.localtest.me"
+
+.PHONY: rancher-password
+rancher-password: ## Print the Rancher bootstrap password (run after rancher-up).
+	@kubectl --context kind-uniproxy-rancher -n cattle-system get secret bootstrap-secret \
+		-o go-template='{{.data.bootstrapPassword|base64decode}}{{"\n"}}' \
+		|| echo "bootstrap-secret not present yet — wait ~30s after rancher-up and retry"
+
+.PHONY: e2e-up
+e2e-up: ## Bring up the uniproxy-e2e kind cluster + run the CI smoke. Exits non-zero on failure.
+	IMG=$(IMG) hack/kind/e2e-up.sh
+
+.PHONY: e2e-down
+e2e-down: ## Tear down the uniproxy-e2e kind cluster.
+	hack/kind/e2e-down.sh
+
 ##@ Operator — testing
 
 .PHONY: test-e2e
