@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,26 +37,26 @@ func (h *AdapterHandler) HandleMCPProtocol(w http.ResponseWriter, r *http.Reques
 
 	adapterID := parts[0]
 
-	// Get user ID from header (would be set by auth middleware)
+	// Get user ID from header (set by UserAuthMiddleware in CR mode)
 	userID := r.Header.Get("X-User-ID")
 	if userID == "" {
 		userID = "default-user" // For development
 	}
 
-	// Get adapter information
+	// Get adapter for ACL fields. Uses GetAdapter (with CreatedBy +
+	// admin-bypass check) — preserves today's "user can only invoke
+	// their own adapters" semantics on this direct path.
 	adapter, err := h.adapterService.GetAdapter(r.Context(), userID, adapterID, h.userGroupService)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Adapter not found"})
+		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: "Adapter not found"})
 		return
 	}
 
-	// RouteAssignment ACL enforcement. When no assignmentRegistry is
-	// wired, behavior is unchanged (legacy allow-all). When wired, the
-	// effective ACL set is computed from the in-memory store —
-	// zero per-request k8s calls — and unmatched subjects get 403.
-	// Adapters with no RouteAssignments stay allow-all (fail-open).
+	// RouteAssignment ACL enforcement (P2.5a). When no assignmentRegistry
+	// is wired, behavior is unchanged (legacy allow-all). When wired, the
+	// effective ACL set is computed from the in-memory store — zero
+	// per-request k8s calls — and unmatched subjects get 403. Adapters
+	// with no RouteAssignments stay allow-all (fail-open).
 	if h.assignmentRegistry != nil {
 		asgs := authsvc.EffectiveAssignments(h.assignmentRegistry, h.namespace, adapter.RouteAssignmentRefs, adapter.MCPServerID)
 		required := authsvc.MethodPermission(r.Method)
@@ -68,266 +70,198 @@ func (h *AdapterHandler) HandleMCPProtocol(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// For sidecar adapters (StreamableHttp with sidecar config), proxy to the sidecar
-	if adapter.ConnectionType == models.ConnectionTypeStreamableHttp && adapter.SidecarConfig != nil {
-		// Construct sidecar URL dynamically using the port from sidecar config
-		// Sidecar runs in suse-ai-up-mcp namespace with name mcp-sidecar-{adapterID}
-		port := 8000 // default
-		if adapter.SidecarConfig != nil {
-			port = adapter.SidecarConfig.Port
-		}
-		// For HTTP transport MCP servers, use internal DNS
-		sidecarURL := fmt.Sprintf("http://mcp-sidecar-%s.suse-ai-up-mcp.svc.cluster.local:%d/mcp", adapterID, port)
-		h.proxyToSidecar(w, r, sidecarURL)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Failed to read request body: " + err.Error()})
 		return
 	}
 
-	// For LocalStdio adapters OR StreamableHttp adapters without sidecar config, return a proper MCP response
-	fmt.Printf("DEBUG: Adapter %s - ConnectionType: %s, SidecarConfig: %v\n", adapterID, adapter.ConnectionType, adapter.SidecarConfig)
-	if adapter.ConnectionType == models.ConnectionTypeLocalStdio ||
-		(adapter.ConnectionType == models.ConnectionTypeStreamableHttp && adapter.SidecarConfig == nil) {
-		fmt.Printf("DEBUG: Returning MCP response for LocalStdio adapter %s\n", adapterID)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		response := map[string]interface{}{
-			"jsonrpc": "2.0",
-			"id":      1,
-			"result": map[string]interface{}{
-				"serverInfo": map[string]interface{}{
-					"name":    adapter.Name,
-					"version": "1.0.0",
-				},
-				"capabilities": map[string]interface{}{
-					"tools": map[string]interface{}{
-						"listChanged": true,
-					},
-				},
-			},
-		}
-		json.NewEncoder(w).Encode(response)
+	sc, ct, resp, err := h.ProxyMCPToAdapter(r.Context(), adapterID, userID, body, r.Header)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
 	}
-
-	// For RemoteHttp adapters, proxy to the remote MCP server
-	if adapter.ConnectionType == models.ConnectionTypeRemoteHttp {
-		if adapter.RemoteUrl == "" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(ErrorResponse{Error: "Remote URL not configured for adapter"})
-			return
-		}
-		h.proxyToRemoteMCP(w, r, adapter.RemoteUrl)
-		return
+	if ct != "" {
+		w.Header().Set("Content-Type", ct)
 	}
-
-	// For other connection types, return not implemented
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
-	json.NewEncoder(w).Encode(ErrorResponse{Error: "MCP protocol not supported for this adapter type"})
+	w.WriteHeader(sc)
+	_, _ = w.Write(resp)
 }
 
-// proxyToRemoteMCP proxies requests to a remote MCP server
-func (h *AdapterHandler) proxyToRemoteMCP(w http.ResponseWriter, r *http.Request, remoteURL string) {
-	fmt.Printf("DEBUG: Proxying MCP request to remote server: %s\n", remoteURL)
-
-	// Extract adapter ID from URL path
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/adapters/")
-	parts := strings.Split(path, "/")
-	if len(parts) < 1 {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid adapter path"})
-		return
-	}
-	adapterID := parts[0]
-
-	// Get user ID from header
-	userID := r.Header.Get("X-User-ID")
-	if userID == "" {
-		userID = "default-user" // For development
-	}
-
-	// Get adapter information to access environment variables
-	adapter, err := h.adapterService.GetAdapter(r.Context(), userID, adapterID, h.userGroupService)
+// ProxyMCPToAdapter dispatches a JSON-RPC body to the named adapter's
+// configured upstream — sidecar URL, remote HTTP URL, or a synthesized
+// LocalStdio init response. Used by HandleMCPProtocol (direct
+// /api/v1/adapters/{name}/mcp callers) and the VirtualMCPRouteHandler
+// (after reverse-resolving a tool name to its origin adapter and
+// rewriting params.name).
+//
+// Does NOT do auth or RouteAssignment ACL — those are caller-owned.
+// Adapter lookup goes through AdapterService.GetRaw, bypassing the
+// CreatedBy check (vroute callers may not own the source adapter; the
+// route's ACL is the authority for them).
+//
+// Returns (statusCode, contentType, response, err). Transport errors
+// against the upstream surface as a non-nil err with statusCode=0
+// (caller should respond 500); upstream HTTP error responses surface
+// as a non-error return with the upstream's statusCode and body so the
+// caller can pass them through.
+func (h *AdapterHandler) ProxyMCPToAdapter(ctx context.Context, adapterID, userID string, body []byte, headers http.Header) (int, string, []byte, error) {
+	adapter, err := h.adapterService.GetRaw(ctx, adapterID)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Adapter not found"})
-		return
+		return 0, "", nil, fmt.Errorf("adapter not found: %w", err)
 	}
 
-	// Create a new request to the remote MCP server
-	remoteReq, err := http.NewRequestWithContext(r.Context(), r.Method, remoteURL, r.Body)
+	switch {
+	case adapter.ConnectionType == models.ConnectionTypeStreamableHttp && adapter.SidecarConfig != nil:
+		port := 8000
+		if adapter.SidecarConfig.Port != 0 {
+			port = adapter.SidecarConfig.Port
+		}
+		sidecarURL := fmt.Sprintf("http://mcp-sidecar-%s.suse-ai-up-mcp.svc.cluster.local:%d/mcp", adapterID, port)
+		return h.dispatchToSidecar(ctx, adapterID, sidecarURL, body, headers)
+
+	case adapter.ConnectionType == models.ConnectionTypeLocalStdio,
+		adapter.ConnectionType == models.ConnectionTypeStreamableHttp && adapter.SidecarConfig == nil:
+		return synthesizeMCPInit(adapter)
+
+	case adapter.ConnectionType == models.ConnectionTypeRemoteHttp:
+		if adapter.RemoteUrl == "" {
+			payload, _ := json.Marshal(ErrorResponse{Error: "Remote URL not configured for adapter"})
+			return http.StatusBadRequest, "application/json", payload, nil
+		}
+		return dispatchToRemote(ctx, adapter, body, headers)
+
+	default:
+		payload, _ := json.Marshal(ErrorResponse{Error: "MCP protocol not supported for this adapter type"})
+		return http.StatusNotImplemented, "application/json", payload, nil
+	}
+}
+
+// synthesizeMCPInit returns the canned MCP initialize response served
+// for LocalStdio adapters and StreamableHttp adapters without a
+// SidecarConfig. Matches the pre-refactor behavior of HandleMCPProtocol.
+func synthesizeMCPInit(adapter *models.AdapterResource) (int, string, []byte, error) {
+	response := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"result": map[string]interface{}{
+			"serverInfo": map[string]interface{}{
+				"name":    adapter.Name,
+				"version": "1.0.0",
+			},
+			"capabilities": map[string]interface{}{
+				"tools": map[string]interface{}{
+					"listChanged": true,
+				},
+			},
+		},
+	}
+	out, err := json.Marshal(response)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Failed to create remote request"})
-		return
+		return 0, "", nil, fmt.Errorf("marshal init response: %w", err)
+	}
+	return http.StatusOK, "application/json", out, nil
+}
+
+// dispatchToRemote forwards the body to a RemoteHttp adapter's remote
+// MCP server. Auth header is rewritten when the adapter declares a
+// GitHub token in its EnvironmentVariables (preserves the pre-refactor
+// behavior of proxyToRemoteMCP).
+func dispatchToRemote(ctx context.Context, adapter *models.AdapterResource, body []byte, headers http.Header) (int, string, []byte, error) {
+	remoteReq, err := http.NewRequestWithContext(ctx, http.MethodPost, adapter.RemoteUrl, bytes.NewReader(body))
+	if err != nil {
+		return 0, "", nil, fmt.Errorf("create remote request: %w", err)
 	}
 
-	// Copy headers from the original request, but replace authorization
-	for key, values := range r.Header {
-		if strings.ToLower(key) == "authorization" {
-			// For GitHub, use the personal access token from environment variables
+	for key, values := range headers {
+		if strings.EqualFold(key, "authorization") {
 			if token := adapter.EnvironmentVariables["GITHUB_PERSONAL_ACCESS_TOKEN"]; token != "" {
 				remoteReq.Header.Set("Authorization", "Bearer "+token)
 			} else if token := adapter.EnvironmentVariables["GITHUB_ACCESS_TOKEN"]; token != "" {
 				remoteReq.Header.Set("Authorization", "Bearer "+token)
 			}
-			// Skip the original authorization header
-		} else {
-			for _, value := range values {
-				remoteReq.Header.Add(key, value)
-			}
+			continue
+		}
+		for _, value := range values {
+			remoteReq.Header.Add(key, value)
 		}
 	}
-
-	// Ensure we have the proper content type for MCP
 	if remoteReq.Header.Get("Content-Type") == "" {
 		remoteReq.Header.Set("Content-Type", "application/json")
 	}
 
-	// Make the request to the remote MCP server
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(remoteReq)
 	if err != nil {
-		fmt.Printf("DEBUG: Failed to connect to remote MCP server %s: %v\n", remoteURL, err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadGateway)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Failed to connect to remote MCP server"})
-		return
+		payload, _ := json.Marshal(ErrorResponse{Error: "Failed to connect to remote MCP server"})
+		return http.StatusBadGateway, "application/json", payload, nil
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("DEBUG: Remote MCP server responded with status: %d\n", resp.StatusCode)
-
-	// Copy the response headers
-	for key, values := range resp.Header {
-		for _, value := range values {
-			w.Header().Add(key, value)
-		}
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, "", nil, fmt.Errorf("read remote response: %w", err)
 	}
-
-	// Set the status code
-	w.WriteHeader(resp.StatusCode)
-
-	// Copy the response body
-	io.Copy(w, resp.Body)
+	return resp.StatusCode, resp.Header.Get("Content-Type"), respBody, nil
 }
 
-// proxyToSidecar proxies requests to the sidecar container
-func (h *AdapterHandler) proxyToSidecar(w http.ResponseWriter, r *http.Request, sidecarURL string) {
-
-	fmt.Printf("DEBUG: Request headers: %+v\n", r.Header)
-
-	// Extract adapter ID from the request path
-	pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/adapters/"), "/")
-	adapterID := pathParts[0]
-
-	// Create a new request to the sidecar
-	sidecarReq, err := http.NewRequestWithContext(r.Context(), r.Method, sidecarURL, r.Body)
+// dispatchToSidecar forwards the body to a sidecar MCP server. The
+// response is read into memory so any sidecar URLs in JSON payloads
+// can be rewritten to point at the proxy's adapter URL (preserves the
+// pre-refactor behavior of proxyToSidecar).
+func (h *AdapterHandler) dispatchToSidecar(ctx context.Context, adapterID, sidecarURL string, body []byte, headers http.Header) (int, string, []byte, error) {
+	sidecarReq, err := http.NewRequestWithContext(ctx, http.MethodPost, sidecarURL, bytes.NewReader(body))
 	if err != nil {
-		fmt.Printf("DEBUG: Failed to create sidecar request: %v\n", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Failed to create sidecar request"})
-		return
+		return 0, "", nil, fmt.Errorf("create sidecar request: %w", err)
 	}
 
-	// Copy headers
-	for key, values := range r.Header {
+	for key, values := range headers {
 		for _, value := range values {
 			sidecarReq.Header.Add(key, value)
 		}
 	}
-
-	// Ensure Accept header includes required types for MCP HTTP transport
 	if sidecarReq.Header.Get("Accept") == "" {
 		sidecarReq.Header.Set("Accept", "application/json, text/event-stream")
 	}
-
-	// Set Host header to localhost for MCP servers that may check host
-	sidecarReq.Host = "localhost"
-
-	// Set Content-Type if not already set
 	if sidecarReq.Header.Get("Content-Type") == "" {
 		sidecarReq.Header.Set("Content-Type", "application/json")
 	}
+	sidecarReq.Host = "localhost"
 
-	// Make the request to the sidecar
 	client := &http.Client{
 		Timeout: 30 * time.Second,
-		// Don't follow redirects to avoid exposing internal URLs
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
 	resp, err := client.Do(sidecarReq)
 	if err != nil {
-		fmt.Printf("DEBUG: Failed to connect to sidecar: %v\n", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadGateway)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "UNIQUE_ERROR: Failed to connect to sidecar: " + err.Error()})
-		return
+		payload, _ := json.Marshal(ErrorResponse{Error: "UNIQUE_ERROR: Failed to connect to sidecar: " + err.Error()})
+		return http.StatusBadGateway, "application/json", payload, nil
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("DEBUG: Sidecar response status: %d, location: %s\n", resp.StatusCode, resp.Header.Get("Location"))
-
-	// If it's a redirect, don't pass it through to avoid exposing internal URLs
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		fmt.Printf("DEBUG: Blocking redirect response to avoid exposing internal URLs\n")
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadGateway)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Sidecar returned redirect - internal routing issue"})
-		return
+		// Don't pass through redirects — they would expose internal URLs.
+		payload, _ := json.Marshal(ErrorResponse{Error: "Sidecar returned redirect - internal routing issue"})
+		return http.StatusBadGateway, "application/json", payload, nil
 	}
 
-	// Copy response headers (but filter out location headers for redirects)
-	for key, values := range resp.Header {
-		if strings.ToLower(key) != "location" { // Don't pass through redirect locations
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
-		}
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, "", nil, fmt.Errorf("read sidecar response: %w", err)
 	}
 
-	// Set status code
-	w.WriteHeader(resp.StatusCode)
-
-	// Read and potentially rewrite the response body
 	contentType := resp.Header.Get("Content-Type")
 	if strings.Contains(contentType, "application/json") {
-		// For JSON responses, rewrite any sidecar URLs to proxy URLs
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Printf("DEBUG: Failed to read response body: %v\n", err)
-			return
-		}
-
-		// Rewrite URLs in the response
-		rewrittenBody := h.rewriteSidecarURLs(string(bodyBytes), adapterID)
-		w.Write([]byte(rewrittenBody))
-	} else {
-		// For non-JSON responses, copy directly
-		io.Copy(w, resp.Body)
+		bodyBytes = []byte(h.rewriteSidecarURLs(string(bodyBytes), adapterID))
 	}
+	return resp.StatusCode, contentType, bodyBytes, nil
 }
 
 // rewriteSidecarURLs rewrites any sidecar URLs in the response to proxy URLs
 func (h *AdapterHandler) rewriteSidecarURLs(responseBody, adapterID string) string {
-	// Construct the sidecar base URL pattern
 	sidecarBaseURL := fmt.Sprintf("http://mcp-sidecar-%s.suse-ai-up-mcp.svc.cluster.local", adapterID)
-
-	// Replace sidecar URLs with proxy URLs
 	proxyBaseURL := fmt.Sprintf("http://localhost:8911/api/v1/adapters/%s", adapterID)
-
-	// Replace any occurrences of sidecar URLs with proxy URLs
-	rewritten := strings.ReplaceAll(responseBody, sidecarBaseURL, proxyBaseURL)
-
-	if rewritten != responseBody {
-		fmt.Printf("DEBUG: Rewrote sidecar URLs in response\n")
-	}
-
-	return rewritten
+	return strings.ReplaceAll(responseBody, sidecarBaseURL, proxyBaseURL)
 }
