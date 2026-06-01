@@ -162,6 +162,17 @@ func adapterCRToResource(cr *mcpv1alpha1.Adapter) *models.AdapterResource {
 		created = time.Now().UTC()
 	}
 
+	var mcpServerID string
+	if cr.Spec.Source.MCPServerRef != nil {
+		mcpServerID = cr.Spec.Source.MCPServerRef.Name
+	}
+	routeAssignmentRefs := make([]string, 0, len(cr.Spec.RouteAssignmentRefs))
+	for _, ref := range cr.Spec.RouteAssignmentRefs {
+		if ref.Name != "" {
+			routeAssignmentRefs = append(routeAssignmentRefs, ref.Name)
+		}
+	}
+
 	res := &models.AdapterResource{
 		AdapterData: models.AdapterData{
 			Name:                 cr.Name,
@@ -172,6 +183,8 @@ func adapterCRToResource(cr *mcpv1alpha1.Adapter) *models.AdapterResource {
 			Description:          cr.Spec.Description,
 			URL:                  url,
 			RemoteUrl:            cr.Spec.Source.RemoteURL,
+			MCPServerID:          mcpServerID,
+			RouteAssignmentRefs:  routeAssignmentRefs,
 		},
 		ID:            cr.Name,
 		CreatedBy:     createdBy,

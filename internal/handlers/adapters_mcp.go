@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/SUSE/suse-ai-up/pkg/models"
+	authsvc "github.com/SUSE/suse-ai-up/pkg/services/auth"
 )
 
 // HandleMCPProtocol proxies MCP protocol requests to the sidecar
@@ -47,6 +48,24 @@ func (h *AdapterHandler) HandleMCPProtocol(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "Adapter not found"})
 		return
+	}
+
+	// RouteAssignment ACL enforcement. When no assignmentRegistry is
+	// wired, behavior is unchanged (legacy allow-all). When wired, the
+	// effective ACL set is computed from the in-memory store —
+	// zero per-request k8s calls — and unmatched subjects get 403.
+	// Adapters with no RouteAssignments stay allow-all (fail-open).
+	if h.assignmentRegistry != nil {
+		asgs := authsvc.EffectiveAssignments(h.assignmentRegistry, h.namespace, adapter.RouteAssignmentRefs, adapter.MCPServerID)
+		required := authsvc.MethodPermission(r.Method)
+		var userGroups []string
+		if u, err := h.userGroupService.GetUser(r.Context(), userID); err == nil && u != nil {
+			userGroups = u.Groups
+		}
+		if !authsvc.Allowed(userID, userGroups, asgs, required) {
+			writeJSON(w, http.StatusForbidden, ErrorResponse{Error: "Insufficient permissions for this adapter"})
+			return
+		}
 	}
 
 	// For sidecar adapters (StreamableHttp with sidecar config), proxy to the sidecar

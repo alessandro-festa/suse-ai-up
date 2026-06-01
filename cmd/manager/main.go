@@ -281,13 +281,15 @@ func main() {
 	// state. P2.4/PR1 wired MCPServerStore; PR2 added
 	// PluginServiceManager; PR3 plumbs the user/group auth projections
 	// so GET /api/v1/users and /api/v1/groups surface CR-reconciled
-	// entries. RouteAssignment store stays manager-internal — no HTTP
-	// route reads it today (handler resolves via UserGroupService).
+	// entries. P2.5a exposes assignmentStore so the proxy hot paths can
+	// enforce RouteAssignment ACLs at request time without per-request
+	// k8s calls.
 	if err := mgr.Add(httpserver.NewRunnable(httpCfg, bootstrap.SharedStores{
 		MCPServerStore:       mcpServerStore,
 		PluginServiceManager: pluginServiceManager,
 		UserStore:            userStore,
 		GroupStore:           groupStore,
+		AssignmentRegistry:   assignmentStore,
 		CRClient:             mgr.GetClient(),
 		Namespace:            workloadNamespace,
 	})); err != nil {
