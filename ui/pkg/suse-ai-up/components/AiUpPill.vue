@@ -46,8 +46,12 @@ export default defineComponent({
   color:      var(--success, #166534);
 }
 .ai-up-pill--warning {
+  // `--warning` (#f4a129) on a 15%-opacity yellow background fails WCAG
+  // AA contrast (~3:1). Use a darker amber that hits ~7:1 on the same
+  // background while staying within the warning hue family.
   background: var(--warning-banner-bg, rgba(244, 161, 41, 0.15));
-  color:      var(--warning, #f4a129);
+  color:      #8a5a07;
+  border:     1px solid rgba(138, 90, 7, 0.25);
 }
 .ai-up-pill--error {
   background: var(--error-banner-bg, rgba(220, 38, 38, 0.1));

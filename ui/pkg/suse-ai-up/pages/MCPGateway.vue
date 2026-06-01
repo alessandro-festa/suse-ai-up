@@ -164,6 +164,9 @@
           <p class="ai-up-muted">
             Restrict who can invoke this adapter through the proxy. Leave both lists empty for
             the default (no ACL).
+            <template v-if="isRancherMode">
+              Showing <strong>Rancher principals</strong>; the selected IDs are stored verbatim in the RouteAssignment.
+            </template>
           </p>
           <label class="ai-up-field">
             <span>Users</span>
@@ -231,6 +234,13 @@ import { adaptersApi, Adapter } from '../services/adapters';
 import { registryApi } from '../services/registry';
 import { usersApi } from '../services/users';
 import { groupsApi } from '../services/groups';
+import {
+  listUsers as listRancherUsers,
+  listGroupPrincipals as listRancherGroups,
+  listGlobalRoleBindings,
+  indexGlobalRoles,
+} from '../services/rancher';
+import { getIdentityProvider, localGroupsFor, getRancherRoleMap } from '../config/identity';
 import { toRegistryView, matchesQuery, RegistryView } from '../services/registry-view';
 
 interface ListAdapter extends Adapter {
@@ -279,6 +289,9 @@ export default defineComponent({
     });
     const userPickerItems  = ref<{ id: string; label: string; sublabel?: string }[]>([]);
     const groupPickerItems = ref<{ id: string; label: string; sublabel?: string }[]>([]);
+    // Reactive snapshot so the template's hint and selectors track changes
+    // made on the Settings → Identity tab even within a single session.
+    const isRancherMode    = computed(() => getIdentityProvider() === 'rancher');
 
     const filtered = computed(() => {
       const q = search.value.trim().toLowerCase();
@@ -332,6 +345,39 @@ export default defineComponent({
     }
 
     async function loadUsersAndGroups() {
+      // Branch on the active identity provider. In Rancher mode we pull
+      // from Rancher's Steve/Norman APIs and feed the picker the Rancher
+      // principal IDs (which get stored verbatim in the RouteAssignment).
+      if (getIdentityProvider() === 'rancher') {
+        try {
+          const [rUsers, bindings] = await Promise.all([
+            listRancherUsers(),
+            listGlobalRoleBindings().catch(() => []),
+          ]);
+          const rolesByUser = indexGlobalRoles(bindings);
+          const rules       = getRancherRoleMap();
+          userPickerItems.value = rUsers.map((x) => {
+            const adminGroups = localGroupsFor(x.id, rolesByUser[x.id] || [], rules);
+            const adminSuffix = adminGroups.length ? ` · ${ adminGroups.join(',') }` : '';
+            return {
+              id:       x.id,
+              label:    `${ x.name }${ rolesByUser[x.id]?.includes('admin') ? ' (admin)' : '' }`,
+              sublabel: `${ x.username || x.id }${ adminSuffix }`,
+            };
+          });
+        } catch { userPickerItems.value = []; }
+        try {
+          const rGroups = await listRancherGroups();
+          groupPickerItems.value = rGroups.map((x) => ({
+            id:       x.id,
+            label:    x.name,
+            sublabel: x.provider || 'rancher',
+          }));
+        } catch { groupPickerItems.value = []; }
+        return;
+      }
+
+      // Local mode (default): pull from our own Users/Groups CRDs.
       try {
         const u = (await usersApi.list()) || [];
         userPickerItems.value = u.map((x) => ({ id: x.id, label: x.name || x.id, sublabel: x.email }));
@@ -453,7 +499,7 @@ export default defineComponent({
     return {
       adapters, registryViews, loadingRegistry, search, loading, error, deleting,
       creating, submitting, createError, aclWarning, selected, pickSearch, form, vars, envText,
-      acl, userPickerItems, groupPickerItems,
+      acl, userPickerItems, groupPickerItems, isRancherMode,
       brokenIcons,
       filtered, pickFiltered, modalTitle, canCreate,
       statusTone,
@@ -548,7 +594,7 @@ export default defineComponent({
 .acl-radio input { width: 14px; height: 14px; }
 .ai-up-banner--warning {
   background: var(--warning-banner-bg, rgba(244, 161, 41, 0.12));
-  color:      var(--warning, #f4a129);
+  color:      #8a5a07;
   border:     1px solid var(--warning, #f4a129);
 }
 .ai-up-details summary {

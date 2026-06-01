@@ -138,7 +138,11 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 	}
 	var groupStore clients.GroupStore = fileGroupStore
 	if shared.GroupStore != nil {
-		groupStore = newLayeredGroupStore(fileGroupStore, shared.GroupStore)
+		// Pass shared.UserStore as the userRegistry so groups can derive
+		// their Members from any User CR that references them in
+		// Spec.Groups — without that, chart-installed groups
+		// (mcp-admins, mcp-users) always show as empty.
+		groupStore = newLayeredGroupStore(fileGroupStore, shared.GroupStore, shared.UserStore)
 	}
 	userGroupService := services.NewUserGroupService(userStore, groupStore)
 
