@@ -290,6 +290,7 @@ func main() {
 		UserStore:            userStore,
 		GroupStore:           groupStore,
 		AssignmentRegistry:   assignmentStore,
+		AgentRegistry:        agentStore,
 		CRClient:             mgr.GetClient(),
 		Namespace:            workloadNamespace,
 	})); err != nil {

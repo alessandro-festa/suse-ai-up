@@ -2,7 +2,7 @@ package agents
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"net/http"
 )
 
@@ -54,10 +54,14 @@ func (*SmartAgentsProtocol) Name() string { return ProtocolNameSmartAgents }
 // in when the Agent CRD starts publishing capability sets.
 func (*SmartAgentsProtocol) Capabilities() []Capability { return nil }
 
-// HandleRequest is a Phase 1 stub. Phase 2's Agent CRD controller fills
-// this in with real per-protocol dispatch.
-func (*SmartAgentsProtocol) HandleRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
-	return nil, errors.New("smartagents protocol: request handling not implemented in Phase 1")
+// HandleRequest is a Phase 1 stub. Phase 2 protocol implementations
+// fill this in with real per-protocol dispatch using ic.Dispatcher.
+func (*SmartAgentsProtocol) HandleRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, ic InvocationContext) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotImplemented)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error": "smartagents protocol: request handling not implemented in Phase 1",
+	})
 }
 
 // EnforceACL is a Phase 1 stub: allow-all. Phase 2 wires this to the
