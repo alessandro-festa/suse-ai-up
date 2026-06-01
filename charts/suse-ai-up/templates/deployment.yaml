@@ -21,6 +21,16 @@ spec:
         - name: suse-ai-up
           image: {{ include "suse-ai-up.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.manager.leaderElect }}
+          # The default invocation runs the `all` subcommand (manager + HTTP
+          # shim in-process). --leader-elect makes multi-replica deployments
+          # safe by funnelling reconciliation through a single leader.
+          # Single-replica deployments hold a one-of-one lease at negligible
+          # cost.
+          args:
+            - "all"
+            - "--leader-elect"
+          {{- end }}
           ports:
             - name: proxy-http
               containerPort: {{ .Values.services.proxy.port }}

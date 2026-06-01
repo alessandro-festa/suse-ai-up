@@ -323,6 +323,15 @@ rbac:
   create: true
   rules: []
 
+# Manager (controller-runtime) configuration. P2.7.
+manager:
+  # Enable controller-runtime leader election. Required when replicaCount > 1
+  # to avoid duplicate reconciliations. Single-replica deployments work fine
+  # with this on — the cost is one Lease object in the release namespace.
+  # When false the Deployment runs the binary with no args (defaults to the
+  # `all` subcommand, no --leader-elect).
+  leaderElect: true
+
 # Pod annotations
 podAnnotations: {}
 
@@ -343,6 +352,15 @@ registry:
 
   # Timeout for registry URL fetch (only used when url is set)
   timeout: "30s"
+
+  # P2.7. When true (default) the chart renders an MCPRegistry CR backed by
+  # the bundled registry ConfigMap (templates/mcpregistry-default.yaml), so
+  # the chart-managed registry surfaces as a first-class CR after install
+  # and MCPRegistryReconciler materializes child MCPServer CRs from it.
+  # Disable when you manage MCPRegistry CRs out-of-band — the ConfigMap
+  # still gets created (controlled by .enabled) but no MCPRegistry CR
+  # references it.
+  bundledAsCR: true
 
   # MCP servers configuration (will be loaded into ConfigMap)
   servers: |

@@ -1,0 +1,32 @@
+{{- /*
+P2.7 default MCPRegistry CR. Surfaces the chart-managed registry
+ConfigMap (templates/configmap.yaml's <fullname>-registry) as a
+first-class CR so MCPRegistryReconciler picks it up and materializes
+child MCPServer CRs on install. Without this, the bundled registry
+sits in a ConfigMap that no reconciler reads.
+
+Skipped when registry.bundledAsCR is false (users managing their own
+MCPRegistry CRs out-of-band) or when registry.enabled is false (no
+chart ConfigMap to reference).
+
+NOTE: deviates from the literal #31 wording ("migration Job that
+creates an inline CR") — ConfigMapRef is the first-class CRD option
+for chart-managed registries (api/v1alpha1/mcpregistry_types.go:35),
+achieves the same no-manual-action outcome, and avoids a Job + new
+binary subcommand. If a strict-inline migration is needed later, add
+a `uniproxy migrate-registry` subcommand + post-install Helm hook.
+*/}}
+{{- if and .Values.registry.enabled .Values.registry.bundledAsCR }}
+apiVersion: mcp.suse.com/v1alpha1
+kind: MCPRegistry
+metadata:
+  name: {{ include "suse-ai-up.fullname" . }}-default
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "suse-ai-up.labels" . | nindent 4 }}
+spec:
+  source:
+    configMapRef:
+      name: {{ include "suse-ai-up.fullname" . }}-registry
+  priority: 0
+{{- end }}
