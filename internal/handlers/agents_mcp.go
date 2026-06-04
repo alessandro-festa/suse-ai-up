@@ -70,6 +70,14 @@ func NewAgentHandler(crClient client.Client, namespace string, agentRegistry age
 	}
 }
 
+// HasProtocolRegistry reports whether the in-memory AgentRegistry was
+// wired at construction. The router uses this to decide whether to
+// mount the protocol-dispatch sub-route; CRUD endpoints are mounted
+// regardless because they read CRs directly via crClient.
+func (h *AgentHandler) HasProtocolRegistry() bool {
+	return h != nil && h.agentRegistry != nil
+}
+
 // HandleAgentProtocol is the entry point for /api/v1/agents/:name/*protocolPath.
 func (h *AgentHandler) HandleAgentProtocol(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/agents/")
