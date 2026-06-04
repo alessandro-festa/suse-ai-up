@@ -56,6 +56,8 @@ export const ENDPOINTS = {
   GROUPS:           `${ API_BASE }/groups`,
   PLUGINS:          `${ API_BASE }/plugins`,
   DISCOVERY:        `${ API_BASE }/discovery`,
+  AGENTS:           `${ API_BASE }/agents`,
+  VROUTES:          `${ API_BASE }/vroutes`,
 } as const;
 
 let cachedServiceLoc: ServiceLocation | null = null;
