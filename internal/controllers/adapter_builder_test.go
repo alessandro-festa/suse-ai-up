@@ -56,7 +56,7 @@ func newDockerAdapter(name string, mutators ...func(*mcpv1alpha1.Adapter)) *mcpv
 
 func TestBuildDeployment_Docker(t *testing.T) {
 	adapter := newDockerAdapter("ops")
-	dep, err := BuildDeployment(adapter, "suse-ai-up-mcp")
+	dep, err := BuildDeployment(adapter, "suse-ai-up-mcp", nil)
 	if err != nil {
 		t.Fatalf("BuildDeployment returned error: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestBuildDeployment_DefaultsReplicasAndPort(t *testing.T) {
 		a.Spec.Replicas = nil
 		a.Spec.Source.SidecarConfig.Port = 0
 	})
-	dep, err := BuildDeployment(adapter, "ns")
+	dep, err := BuildDeployment(adapter, "ns", nil)
 	if err != nil {
 		t.Fatalf("BuildDeployment returned error: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestBuildDeployment_UnsupportedCommandType(t *testing.T) {
 			adapter := newDockerAdapter("ops", func(a *mcpv1alpha1.Adapter) {
 				a.Spec.Source.SidecarConfig.CommandType = ct
 			})
-			_, err := BuildDeployment(adapter, "ns")
+			_, err := BuildDeployment(adapter, "ns", nil)
 			if !errors.Is(err, ErrUnsupportedCommandType) {
 				t.Fatalf("err = %v, want ErrUnsupportedCommandType", err)
 			}
@@ -140,7 +140,7 @@ func TestBuildDeployment_MissingSidecarConfig(t *testing.T) {
 			ConnectionType: mcpv1alpha1.ConnectionTypeSidecarStdio,
 		},
 	}
-	_, err := BuildDeployment(adapter, "ns")
+	_, err := BuildDeployment(adapter, "ns", nil)
 	if !errors.Is(err, ErrMissingSidecarConfig) {
 		t.Fatalf("err = %v, want ErrMissingSidecarConfig", err)
 	}
@@ -150,7 +150,7 @@ func TestBuildDeployment_DockerRequiresImage(t *testing.T) {
 	adapter := newDockerAdapter("ops", func(a *mcpv1alpha1.Adapter) {
 		a.Spec.Source.SidecarConfig.Image = ""
 	})
-	_, err := BuildDeployment(adapter, "ns")
+	_, err := BuildDeployment(adapter, "ns", nil)
 	if err == nil {
 		t.Fatal("expected error for missing image, got nil")
 	}
@@ -161,7 +161,7 @@ func TestBuildDeployment_DockerRequiresImage(t *testing.T) {
 
 func TestBuildService_DockerMatchesDeployment(t *testing.T) {
 	adapter := newDockerAdapter("ops")
-	dep, err := BuildDeployment(adapter, "suse-ai-up-mcp")
+	dep, err := BuildDeployment(adapter, "suse-ai-up-mcp", nil)
 	if err != nil {
 		t.Fatalf("BuildDeployment: %v", err)
 	}

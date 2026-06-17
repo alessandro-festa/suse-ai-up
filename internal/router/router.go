@@ -207,6 +207,19 @@ func Register(r *gin.Engine, svc *bootstrap.AppServices) {
 			}
 		}
 
+		// Registry sources (MCPRegistry CRUD + well-known endpoint).
+		// Only wired in CR mode; the handler is nil when running without
+		// a controller-runtime client.
+		if svc.RegistrySourceHandler != nil {
+			regSources := v1.Group("/registry-sources")
+			regSources.GET("/well-known", ginToHTTPHandler(svc.RegistrySourceHandler.GetWellKnownRegistrySources))
+			regSources.GET("", ginToHTTPHandler(svc.RegistrySourceHandler.ListRegistrySources))
+			regSources.POST("", ginToHTTPHandler(svc.RegistrySourceHandler.CreateRegistrySource))
+			regSources.GET("/:name", ginToHTTPHandler(svc.RegistrySourceHandler.GetRegistrySource))
+			regSources.PUT("/:name", ginToHTTPHandler(svc.RegistrySourceHandler.UpdateRegistrySource))
+			regSources.DELETE("/:name", ginToHTTPHandler(svc.RegistrySourceHandler.DeleteRegistrySource))
+		}
+
 		// Plugin routes
 		pluginsGroup := v1.Group("/plugins")
 		{

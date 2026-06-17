@@ -62,6 +62,7 @@ type AppServices struct {
 	PluginHandler          *handlers.PluginHandler
 	VirtualMCPRouteHandler *handlers.VirtualMCPRouteHandler
 	AgentHandler           *handlers.AgentHandler
+	RegistrySourceHandler  *handlers.RegistrySourceHandler
 }
 
 // SharedStores carries store instances the caller owns and wants the
@@ -395,6 +396,13 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		)
 	}
 
+	// RegistrySourceHandler (MCPRegistry CRUD + well-known endpoint). Only
+	// wired in CR mode; router.go skips the group when nil.
+	var registrySourceHandler *handlers.RegistrySourceHandler
+	if shared.CRClient != nil {
+		registrySourceHandler = handlers.NewRegistrySourceHandler(shared.CRClient, shared.Namespace, userGroupService)
+	}
+
 	return &AppServices{
 		Cfg:                    cfg,
 		AdapterStore:           adapterStore,
@@ -423,5 +431,6 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		PluginHandler:          pluginHandler,
 		VirtualMCPRouteHandler: virtualMCPRouteHandler,
 		AgentHandler:           agentHandler,
+		RegistrySourceHandler:  registrySourceHandler,
 	}, nil
 }

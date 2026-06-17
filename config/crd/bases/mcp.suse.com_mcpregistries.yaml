@@ -67,6 +67,17 @@ spec:
               of MCPServer entries. Multiple registries can coexist; Priority resolves
               name conflicts across them.
             properties:
+              format:
+                description: |-
+                  Format identifies the payload format of the registry source.
+                  Defaults to "" which is treated as "yaml" (the legacy list-of-maps
+                  format). Use "mcp-registry-v0.1" for the official MCP registry JSON
+                  format at registry.modelcontextprotocol.io.
+                enum:
+                - ""
+                - yaml
+                - mcp-registry-v0.1
+                type: string
               priority:
                 description: |-
                   Priority resolves name conflicts when two registries provide an

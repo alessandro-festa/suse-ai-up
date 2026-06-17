@@ -62,7 +62,6 @@ rules:
   - adapters
   - agents
   - groups
-  - mcpregistries
   - plugins
   - routeassignments
   - users
@@ -106,6 +105,7 @@ rules:
 - apiGroups:
   - mcp.suse.com
   resources:
+  - mcpregistries
   - mcpservers
   verbs:
   - create
