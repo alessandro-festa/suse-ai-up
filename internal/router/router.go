@@ -176,15 +176,27 @@ func Register(r *gin.Engine, svc *bootstrap.AppServices) {
 			}
 		}
 
-		// Agent hot path (P2.5c). /:name/*protocolPath catches the
-		// agent-protocol-specific suffix so different AgentProtocol
-		// implementations can shape their own URL surface. CR-mode
-		// only — legacy mode leaves the handler nil.
+		// Agents. Two surfaces under /api/v1/agents:
+		//   - CRUD (list/get/create/update/delete) — backed directly by
+		//     crClient, available whenever the handler is constructed.
+		//     The handler self-gates mutations via UserGroupService.
+		//   - Protocol dispatch (/:name/*protocolPath) — needs the
+		//     in-memory AgentRegistry, which the bootstrap only builds in
+		//     CR mode with the reconciler running. Skipped otherwise so a
+		//     missing registry doesn't 500 the dispatch path; CRUD still
+		//     responds.
 		if svc.AgentHandler != nil {
 			agentsGroup := v1.Group("/agents")
-			agentsGroup.Use(auth.UserAuthMiddleware(svc.UserAuthService))
-			{
-				agentsGroup.Any("/:name/*protocolPath", ginToHTTPHandler(svc.AgentHandler.HandleAgentProtocol))
+			agentsGroup.GET("", ginToHTTPHandler(svc.AgentHandler.ListAgents))
+			agentsGroup.POST("", ginToHTTPHandler(svc.AgentHandler.CreateAgent))
+			agentsGroup.GET("/:name", ginToHTTPHandler(svc.AgentHandler.GetAgent))
+			agentsGroup.PUT("/:name", ginToHTTPHandler(svc.AgentHandler.UpdateAgent))
+			agentsGroup.DELETE("/:name", ginToHTTPHandler(svc.AgentHandler.DeleteAgent))
+
+			if svc.AgentHandler.HasProtocolRegistry() {
+				protectedAgents := agentsGroup.Group("")
+				protectedAgents.Use(auth.UserAuthMiddleware(svc.UserAuthService))
+				protectedAgents.Any("/:name/*protocolPath", ginToHTTPHandler(svc.AgentHandler.HandleAgentProtocol))
 			}
 		}
 

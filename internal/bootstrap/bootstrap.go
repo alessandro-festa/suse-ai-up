@@ -375,15 +375,19 @@ func BootstrapWithStores(ctx context.Context, cfg *config.Config, shared SharedS
 		)
 	}
 
-	// AgentHandler (P2.5c) — CR-mode only. Agent metadata + Spec.Tools[]
-	// come from the in-memory AgentRegistry (zero per-request k8s calls);
-	// Spec.ACL is lazy-fetched via the informer-cached client.
+	// AgentHandler (P2.5c hot path + Agent CRUD). The protocol-dispatch
+	// hot path needs both crClient and AgentRegistry (the registry serves
+	// per-request agent metadata + Spec.Tools[] without an API hit). The
+	// CRUD endpoints (ListAgents/CreateAgent/etc., agents_crud.go) need
+	// only the crClient — they read CRs directly. So construct whenever
+	// crClient is available; the router skips the protocol-dispatch
+	// route when AgentRegistry is nil (see router.go).
 	var agentHandler *handlers.AgentHandler
-	if shared.CRClient != nil && shared.AgentRegistry != nil {
+	if shared.CRClient != nil {
 		agentHandler = handlers.NewAgentHandler(
 			shared.CRClient,
 			shared.Namespace,
-			shared.AgentRegistry,
+			shared.AgentRegistry, // may be nil — CRUD still works; dispatch route is skipped
 			agents.DefaultRegistry,
 			shared.AssignmentRegistry,
 			userGroupService,
