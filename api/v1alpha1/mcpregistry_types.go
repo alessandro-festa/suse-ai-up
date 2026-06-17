@@ -47,6 +47,14 @@ type MCPRegistrySpec struct {
 	// Source is where this registry's entries come from.
 	Source MCPRegistrySource `json:"source"`
 
+	// Format identifies the payload format of the registry source.
+	// Defaults to "" which is treated as "yaml" (the legacy list-of-maps
+	// format). Use "mcp-registry-v0.1" for the official MCP registry JSON
+	// format at registry.modelcontextprotocol.io.
+	// +kubebuilder:validation:Enum="";"yaml";"mcp-registry-v0.1"
+	// +optional
+	Format string `json:"format,omitempty"`
+
 	// RefreshInterval controls how often the controller re-syncs from
 	// Source. Defaults to 5m when unset. Ignored for inline sources (no
 	// external state to poll).

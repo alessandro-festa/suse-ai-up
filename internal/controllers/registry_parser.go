@@ -125,6 +125,83 @@ func mapToMCPServerSpec(entry map[string]interface{}) mcpv1alpha1.MCPServerSpec 
 			}
 		}
 	}
+	// Flat fields — simplified format where commandType/command/port/category/tags
+	// live at the entry root instead of nested under meta.sidecarConfig/meta.
+	if spec.CommandType == "" {
+		if ct, ok := entry["commandType"].(string); ok {
+			spec.CommandType = ct
+		}
+	}
+	if spec.Command == "" {
+		if cmd, ok := entry["command"].(string); ok {
+			spec.Command = cmd
+		}
+	}
+	if spec.Port == 0 {
+		switch p := entry["port"].(type) {
+		case int:
+			spec.Port = int32(p)
+		case float64:
+			spec.Port = int32(p)
+		}
+	}
+	if len(spec.Categories) == 0 {
+		if cat, ok := entry["category"].(string); ok && cat != "" {
+			spec.Categories = []string{cat}
+		}
+	}
+	if len(spec.Tags) == 0 {
+		if tags, ok := entry["tags"].([]interface{}); ok {
+			for _, t := range tags {
+				if s, ok := t.(string); ok {
+					spec.Tags = append(spec.Tags, s)
+				}
+			}
+		}
+	}
+	if spec.DisplayName == "" {
+		if title, ok := entry["title"].(string); ok {
+			spec.DisplayName = title
+		}
+	}
+
+	// config.secrets → Packages[].EnvironmentVariables so the UI knows
+	// what variables to prompt the user for when creating an adapter.
+	if cfgBlock, ok := entry["config"].(map[string]interface{}); ok {
+		if secretsRaw, ok := cfgBlock["secrets"].([]interface{}); ok {
+			var envVars []mcpv1alpha1.MCPServerEnvVar
+			for _, secretRaw := range secretsRaw {
+				sm, ok := secretRaw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				envName, _ := sm["env"].(string)
+				if envName == "" {
+					continue
+				}
+				ev := mcpv1alpha1.MCPServerEnvVar{Name: envName}
+				if desc, ok := sm["example"].(string); ok {
+					ev.Description = desc
+				}
+				if t, ok := sm["type"].(string); ok && t == "secret" {
+					ev.IsSecret = true
+				}
+				envVars = append(envVars, ev)
+			}
+			if len(envVars) > 0 {
+				if len(spec.Packages) > 0 {
+					spec.Packages[0].EnvironmentVariables = append(spec.Packages[0].EnvironmentVariables, envVars...)
+				} else {
+					spec.Packages = []mcpv1alpha1.MCPServerPackage{{
+						RegistryType:         "stdio",
+						Identifier:           spec.Command,
+						Transport:            mcpv1alpha1.MCPServerTransport{Type: "stdio"},
+						EnvironmentVariables: envVars,
+					}}
+				}
+			}
+		}
+	}
 	if src, ok := entry["source"].(map[string]interface{}); ok {
 		if url, ok := src["project"].(string); ok && url != "" {
 			spec.Repository = &mcpv1alpha1.MCPServerRepository{URL: url, Source: "git"}

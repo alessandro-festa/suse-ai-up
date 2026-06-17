@@ -73,7 +73,7 @@ type MCPRegistryReconciler struct {
 	HTTPClient *http.Client
 }
 
-// +kubebuilder:rbac:groups=mcp.suse.com,resources=mcpregistries,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=mcp.suse.com,resources=mcpregistries,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=mcp.suse.com,resources=mcpregistries/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=mcp.suse.com,resources=mcpregistries/finalizers,verbs=update
 // +kubebuilder:rbac:groups=mcp.suse.com,resources=mcpservers,verbs=get;list;watch;create;update;patch;delete
@@ -228,7 +228,7 @@ func (r *MCPRegistryReconciler) resolveSource(ctx context.Context, registry *mcp
 		if err != nil {
 			return nil, nil, nil, false, &sourceError{reason: "FetchFailed", error: err}
 		}
-		specs, names, warnings, err = ParseRegistryYAML(data)
+		specs, names, warnings, err = parseByFormat(registry.Spec.Format, data)
 		if err != nil {
 			return nil, nil, nil, false, &sourceError{reason: "ParseFailed", error: err}
 		}
@@ -258,7 +258,7 @@ func (r *MCPRegistryReconciler) resolveSource(ctx context.Context, registry *mcp
 				key, data = k, v
 			}
 		}
-		specs, names, warnings, err := ParseRegistryYAML([]byte(data))
+		specs, names, warnings, err := parseByFormat(registry.Spec.Format, []byte(data))
 		if err != nil {
 			return nil, nil, nil, false, &sourceError{reason: "ParseFailed", error: err}
 		}
@@ -272,6 +272,16 @@ func (r *MCPRegistryReconciler) resolveSource(ctx context.Context, registry *mcp
 			reason: "NoSource",
 			error:  fmt.Errorf("MCPRegistry.Spec.Source has none of url, configMapRef, inline set"),
 		}
+	}
+}
+
+// parseByFormat dispatches to the correct parser based on the Format field.
+func parseByFormat(format string, data []byte) ([]mcpv1alpha1.MCPServerSpec, []string, []string, error) {
+	switch format {
+	case "mcp-registry-v0.1":
+		return ParseMCPRegistryJSON(data)
+	default:
+		return ParseRegistryYAML(data)
 	}
 }
 

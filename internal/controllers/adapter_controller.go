@@ -106,11 +106,6 @@ func (r *AdapterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		})
 	}
 
-	if len(adapter.Spec.Variables) > 0 {
-		logger.Info("Spec.Variables is set but variable substitution is not implemented in this reconciler yet; values pass through verbatim",
-			"adapter", req.NamespacedName, "variableCount", len(adapter.Spec.Variables))
-	}
-
 	// Dispatch: Sandbox (mcp-proxy wrapping STDIO servers) vs Deployment
 	// (raw docker image that already speaks HTTP).
 	if needsSandbox(&adapter) {
@@ -122,7 +117,7 @@ func (r *AdapterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 // reconcileDeployment handles the Deployment+Service path for docker-type
 // adapters (the original code path, extracted for dispatch clarity).
 func (r *AdapterReconciler) reconcileDeployment(ctx context.Context, adapter *mcpv1alpha1.Adapter, endpointURL string) (ctrl.Result, error) {
-	desiredDep, err := BuildDeployment(adapter, r.WorkloadNamespace)
+	desiredDep, err := BuildDeployment(adapter, r.WorkloadNamespace, adapter.Spec.Variables)
 	if err != nil {
 		reason, msg := classifyBuildError(err)
 		log.FromContext(ctx).Info("Adapter spec is not buildable by this reconciler",
@@ -207,7 +202,7 @@ func (r *AdapterReconciler) reconcileDeployment(ctx context.Context, adapter *mc
 // agent-sandbox creates a ClusterIP Service automatically when
 // Spec.Service=true.
 func (r *AdapterReconciler) reconcileSandbox(ctx context.Context, adapter *mcpv1alpha1.Adapter, endpointURL string) (ctrl.Result, error) {
-	desiredSandbox, err := BuildSandbox(adapter, r.WorkloadNamespace)
+	desiredSandbox, err := BuildSandbox(adapter, r.WorkloadNamespace, adapter.Spec.Variables)
 	if err != nil {
 		reason, msg := classifyBuildError(err)
 		log.FromContext(ctx).Info("Adapter spec is not buildable as Sandbox",

@@ -112,7 +112,7 @@ func sidecarSelector(adapter *mcpv1alpha1.Adapter) map[string]string {
 // ConnectionType requires a sidecar. The function is pure — no client, no
 // I/O — so it is exhaustively unit-testable. Caller is responsible for
 // setting OwnerReferences and applying the object.
-func BuildDeployment(adapter *mcpv1alpha1.Adapter, workloadNamespace string) (*appsv1.Deployment, error) {
+func BuildDeployment(adapter *mcpv1alpha1.Adapter, workloadNamespace string, variables map[string]string) (*appsv1.Deployment, error) {
 	if adapter.Spec.Source.SidecarConfig == nil {
 		return nil, ErrMissingSidecarConfig
 	}
@@ -138,6 +138,14 @@ func BuildDeployment(adapter *mcpv1alpha1.Adapter, workloadNamespace string) (*a
 	labels := sidecarLabels(adapter)
 	selector := sidecarSelector(adapter)
 
+	env := append(cfg.Env, variablesToEnvVars(variables, cfg.Env)...)
+
+	command := substituteVariables(cfg.Command, variables)
+	var args []string
+	for _, a := range cfg.Args {
+		args = append(args, substituteVariables(a, variables))
+	}
+
 	container := corev1.Container{
 		Name:  "sidecar",
 		Image: cfg.Image,
@@ -146,13 +154,13 @@ func BuildDeployment(adapter *mcpv1alpha1.Adapter, workloadNamespace string) (*a
 			ContainerPort: port,
 			Protocol:      corev1.ProtocolTCP,
 		}},
-		Env: cfg.Env,
+		Env: env,
 	}
-	if cfg.Command != "" {
-		container.Command = []string{cfg.Command}
+	if command != "" {
+		container.Command = []string{command}
 	}
-	if len(cfg.Args) > 0 {
-		container.Args = cfg.Args
+	if len(args) > 0 {
+		container.Args = args
 	}
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -188,7 +196,7 @@ func needsSandbox(adapter *mcpv1alpha1.Adapter) bool {
 // command type is not "docker". The Sandbox pod runs mcp-proxy in Mode 2
 // (server-side), which spawns the STDIO MCP server as a child process
 // and exposes streamable-HTTP on the configured port.
-func BuildSandbox(adapter *mcpv1alpha1.Adapter, workloadNamespace string) (*sandboxv1alpha1.Sandbox, error) {
+func BuildSandbox(adapter *mcpv1alpha1.Adapter, workloadNamespace string, variables map[string]string) (*sandboxv1alpha1.Sandbox, error) {
 	if adapter.Spec.Source.SidecarConfig == nil {
 		return nil, ErrMissingSidecarConfig
 	}
@@ -199,22 +207,23 @@ func BuildSandbox(adapter *mcpv1alpha1.Adapter, workloadNamespace string) (*sand
 		port = defaultSidecarPort
 	}
 
-	command := cfg.Command
+	command := substituteVariables(cfg.Command, variables)
 	if command == "" {
 		return nil, fmt.Errorf("sandbox adapter requires Spec.Source.SidecarConfig.Command")
 	}
 
 	image := DefaultMCPProxyImage
 
-	args := []string{"--port=" + strconv.Itoa(int(port))}
-	if cfg.Command != "" {
-		// "--" separates mcp-proxy flags from the child command so
-		// child args like --bugzilla-server aren't parsed by mcp-proxy.
-		args = append(args, "--")
-		args = append(args, strings.Fields(cfg.Command)...)
-		args = append(args, cfg.Args...)
+	proxyArgs := []string{"--port=" + strconv.Itoa(int(port))}
+	// "--" separates mcp-proxy flags from the child command so
+	// child args like --bugzilla-server aren't parsed by mcp-proxy.
+	proxyArgs = append(proxyArgs, "--")
+	proxyArgs = append(proxyArgs, strings.Fields(command)...)
+	for _, a := range cfg.Args {
+		proxyArgs = append(proxyArgs, substituteVariables(a, variables))
 	}
 
+	env := append(cfg.Env, variablesToEnvVars(variables, cfg.Env)...)
 	labels := sidecarLabels(adapter)
 
 	container := corev1.Container{
@@ -222,13 +231,13 @@ func BuildSandbox(adapter *mcpv1alpha1.Adapter, workloadNamespace string) (*sand
 		Image:           image,
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"mcp-proxy"},
-		Args:            args,
+		Args:            proxyArgs,
 		Ports: []corev1.ContainerPort{{
 			Name:          "mcp",
 			ContainerPort: port,
 			Protocol:      corev1.ProtocolTCP,
 		}},
-		Env: cfg.Env,
+		Env: env,
 	}
 
 	return &sandboxv1alpha1.Sandbox{
@@ -249,6 +258,44 @@ func BuildSandbox(adapter *mcpv1alpha1.Adapter, workloadNamespace string) (*sand
 			},
 		},
 	}, nil
+}
+
+// substituteVariables replaces {{template.key}} placeholders in s with values
+// from variables. Keys are env var names (e.g. BUGZILLA_SERVER); the template
+// key is derived mechanically: lowercase + replace "_" with "." →
+// {{bugzilla.server}}. Matches the convention in the legacy
+// pkg/services/adapters/templates.go:substituteTemplates.
+func substituteVariables(s string, variables map[string]string) string {
+	if len(variables) == 0 || !strings.Contains(s, "{{") {
+		return s
+	}
+	result := s
+	for envName, value := range variables {
+		templateKey := strings.ToLower(strings.ReplaceAll(envName, "_", "."))
+		placeholder := "{{" + templateKey + "}}"
+		result = strings.ReplaceAll(result, placeholder, value)
+	}
+	return result
+}
+
+// variablesToEnvVars converts the user-supplied Variables map into a slice
+// of corev1.EnvVar, skipping any names that already exist in existing.
+func variablesToEnvVars(variables map[string]string, existing []corev1.EnvVar) []corev1.EnvVar {
+	if len(variables) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(existing))
+	for _, e := range existing {
+		seen[e.Name] = true
+	}
+	var out []corev1.EnvVar
+	for name, value := range variables {
+		if seen[name] {
+			continue
+		}
+		out = append(out, corev1.EnvVar{Name: name, Value: value})
+	}
+	return out
 }
 
 // BuildService renders the *corev1.Service exposing the Deployment built by
