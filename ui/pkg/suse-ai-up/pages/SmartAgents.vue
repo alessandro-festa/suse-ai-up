@@ -119,11 +119,17 @@
         </label>
       </details>
 
-      <label class="ai-up-field">
-        <span>Access control (RouteAssignment names)</span>
-        <small class="ai-up-muted">One assignment name per line. Leave empty for no per-agent ACL.</small>
-        <textarea v-model="aclText" class="ai-up-textarea" rows="2" placeholder="weather-bot-admins" />
-      </label>
+      <div class="ai-up-fieldset">
+        <div class="ai-up-fieldset__legend">Access control <span class="ai-up-fieldset__optional">(optional)</span></div>
+        <p class="ai-up-muted">Select RouteAssignments to control who can invoke this agent.</p>
+        <AiUpPickerList
+          :items="raPickerItems"
+          :selected="selectedAcl"
+          empty-label="No route assignments found. Create them via the MCP Registry."
+          search-placeholder="Filter assignments..."
+          @update:selected="selectedAcl = $event"
+        />
+      </div>
 
       <div v-if="createError" class="ai-up-banner ai-up-banner--error">{{ createError }}</div>
 
@@ -145,9 +151,11 @@ import AiUpGallery from '../components/AiUpGallery.vue';
 import AiUpCard from '../components/AiUpCard.vue';
 import AiUpPill from '../components/AiUpPill.vue';
 import AiUpModal from '../components/AiUpModal.vue';
+import AiUpPickerList from '../components/AiUpPickerList.vue';
 import { agentsApi, Agent, AgentTool, CreateAgentRequest } from '../services/agents';
 import { adaptersApi } from '../services/adapters';
 import { vroutesApi } from '../services/vroutes';
+import { routeAssignmentsApi } from '../services/route-assignments';
 
 interface ToolForm { kind: 'adapter' | 'vroute'; name: string; }
 
@@ -165,16 +173,9 @@ function parseEnvText(text: string): Record<string, string> {
   return out;
 }
 
-function parseLines(text: string): string[] {
-  return (text || '')
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 export default defineComponent({
   name:       'SmartAgents',
-  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpCard, AiUpPill, AiUpModal },
+  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpCard, AiUpPill, AiUpModal, AiUpPickerList },
   setup() {
     const agents      = ref<Agent[]>([]);
     const search      = ref('');
@@ -187,6 +188,8 @@ export default defineComponent({
 
     const adapterOptions = ref<string[]>([]);
     const vrouteOptions  = ref<string[]>([]);
+    const raPickerItems  = ref<{ id: string; label: string; sublabel?: string }[]>([]);
+    const selectedAcl    = ref<string[]>([]);
 
     const form = reactive({
       name:        '',
@@ -195,7 +198,6 @@ export default defineComponent({
       tools:       [] as ToolForm[],
       runtime:     { image: '', port: undefined as number | undefined, replicas: undefined as number | undefined, envText: '' },
     });
-    const aclText = ref('');
 
     const filtered = computed(() => {
       const q = search.value.trim().toLowerCase();
@@ -231,8 +233,6 @@ export default defineComponent({
     }
 
     async function loadOptions() {
-      // Best-effort: populate the tool selectors from the existing adapters
-      // and vroutes. Failures are silent — the user can still type a name.
       try {
         const list = (await adaptersApi.list()) || [];
         adapterOptions.value = list.map((a: any) => a.name).filter(Boolean);
@@ -241,6 +241,14 @@ export default defineComponent({
         const list = (await vroutesApi.list()) || [];
         vrouteOptions.value = list.map((v) => v.name).filter(Boolean);
       } catch { vrouteOptions.value = []; }
+      try {
+        const list = (await routeAssignmentsApi.list()) || [];
+        raPickerItems.value = list.map((ra) => ({
+          id:       ra.id,
+          label:    ra.id,
+          sublabel: `${ ra.permissions || 'read' } · server: ${ ra.serverId || '—' }`,
+        }));
+      } catch { raPickerItems.value = []; }
     }
 
     function openCreate() {
@@ -252,7 +260,7 @@ export default defineComponent({
       form.runtime.port     = undefined;
       form.runtime.replicas = undefined;
       form.runtime.envText  = '';
-      aclText.value    = '';
+      selectedAcl.value = [];
       createError.value = null;
       creating.value   = true;
       loadOptions();
@@ -286,7 +294,7 @@ export default defineComponent({
           protocol:    form.protocol.trim(),
           description: form.description.trim() || undefined,
           tools,
-          acl:         parseLines(aclText.value),
+          acl:         selectedAcl.value,
         };
 
         const env = parseEnvText(form.runtime.envText);
@@ -331,7 +339,7 @@ export default defineComponent({
     return {
       agents, search, loading, error, deleting,
       creating, submitting, createError,
-      form, aclText, adapterOptions, vrouteOptions,
+      form, selectedAcl, raPickerItems, adapterOptions, vrouteOptions,
       filtered, canCreate,
       statusTone, refresh, openCreate, closeCreate, addTool, removeTool, submitCreate, confirmDelete,
     };
@@ -391,6 +399,11 @@ export default defineComponent({
   font-weight:  600;
   color:        var(--body-text, #333);
   margin-bottom: 2px;
+}
+.ai-up-fieldset__optional {
+  font-weight: 400;
+  color:       var(--muted, #888);
+  margin-left: 4px;
 }
 .tool-row {
   display: grid;

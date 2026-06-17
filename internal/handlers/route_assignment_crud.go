@@ -18,6 +18,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -184,6 +185,30 @@ func (h *RouteAssignmentHandler) mcpServerExists(ctx context.Context, serverID s
 	var srv mcpv1alpha1.MCPServer
 	err := h.crClient.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: serverID}, &srv)
 	return err == nil
+}
+
+// listAllRouteAssignmentCRs returns every RouteAssignment CR in the
+// namespace, regardless of which server owns it.
+func (h *RouteAssignmentHandler) listAllRouteAssignmentCRs(w http.ResponseWriter, r *http.Request) {
+	var list mcpv1alpha1.RouteAssignmentList
+	if err := h.crClient.List(r.Context(), &list, client.InNamespace(h.namespace)); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to list route assignments: " + err.Error()})
+		return
+	}
+	out := make([]models.RouteAssignment, 0, len(list.Items))
+	for i := range list.Items {
+		cr := &list.Items[i]
+		serverID := ""
+		if cr.Spec.MCPServerRef != nil {
+			serverID = cr.Spec.MCPServerRef.Name
+		}
+		out = append(out, routeAssignmentCRToModel(cr, serverID))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
 }
 
 // listAssignmentsForServer returns the JSON-ready slice of

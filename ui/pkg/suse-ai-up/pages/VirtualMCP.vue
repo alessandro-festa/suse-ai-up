@@ -88,7 +88,7 @@
             <button type="button" class="ai-up-btn ai-up-btn--ghost" @click="removeSource(idx)">Remove</button>
           </div>
           <div class="source-row__selector">
-            <span class="source-row__label">Tools selector</span>
+            <span class="source-row__label">Tools</span>
             <select v-model="s.selectorMode" class="ai-up-input">
               <option value="all">All</option>
               <option value="names">Names (comma-separated)</option>
@@ -102,15 +102,51 @@
               :placeholder="selectorPlaceholder(s.selectorMode)"
             />
           </div>
+          <div class="source-row__selector">
+            <span class="source-row__label">Resources</span>
+            <select v-model="s.resourcesSelectorMode" class="ai-up-input">
+              <option value="all">All</option>
+              <option value="names">Names (comma-separated)</option>
+              <option value="prefix">Prefix</option>
+              <option value="regex">Regex</option>
+            </select>
+            <input
+              v-if="s.resourcesSelectorMode !== 'all'"
+              v-model="s.resourcesSelectorValue"
+              class="ai-up-input"
+              :placeholder="selectorPlaceholder(s.resourcesSelectorMode)"
+            />
+          </div>
+          <div class="source-row__selector">
+            <span class="source-row__label">Prompts</span>
+            <select v-model="s.promptsSelectorMode" class="ai-up-input">
+              <option value="all">All</option>
+              <option value="names">Names (comma-separated)</option>
+              <option value="prefix">Prefix</option>
+              <option value="regex">Regex</option>
+            </select>
+            <input
+              v-if="s.promptsSelectorMode !== 'all'"
+              v-model="s.promptsSelectorValue"
+              class="ai-up-input"
+              :placeholder="selectorPlaceholder(s.promptsSelectorMode)"
+            />
+          </div>
         </div>
         <button type="button" class="ai-up-btn ai-up-btn--ghost" @click="addSource">+ Add source</button>
       </div>
 
-      <label class="ai-up-field">
-        <span>Access control (RouteAssignment names)</span>
-        <small class="ai-up-muted">One assignment name per line. Leave empty for no per-route ACL.</small>
-        <textarea v-model="aclText" class="ai-up-textarea" rows="2" placeholder="ops-route-admins" />
-      </label>
+      <div class="ai-up-fieldset">
+        <div class="ai-up-fieldset__legend">Access control <span class="ai-up-fieldset__optional">(optional)</span></div>
+        <p class="ai-up-muted">Select RouteAssignments to control who can invoke this route.</p>
+        <AiUpPickerList
+          :items="raPickerItems"
+          :selected="selectedAcl"
+          empty-label="No route assignments found. Create them via the MCP Registry."
+          search-placeholder="Filter assignments..."
+          @update:selected="selectedAcl = $event"
+        />
+      </div>
 
       <div v-if="createError" class="ai-up-banner ai-up-banner--error">{{ createError }}</div>
 
@@ -132,6 +168,8 @@ import AiUpGallery from '../components/AiUpGallery.vue';
 import AiUpCard from '../components/AiUpCard.vue';
 import AiUpPill from '../components/AiUpPill.vue';
 import AiUpModal from '../components/AiUpModal.vue';
+import AiUpPickerList from '../components/AiUpPickerList.vue';
+import { routeAssignmentsApi } from '../services/route-assignments';
 import {
   vroutesApi,
   VirtualMCPRoute,
@@ -145,17 +183,14 @@ import { registryApi } from '../services/registry';
 type SelectorMode = 'all' | 'names' | 'prefix' | 'regex';
 
 interface SourceForm {
-  kind:          'adapter' | 'mcpServer';
-  name:          string;
-  selectorMode:  SelectorMode;
-  selectorValue: string;
-}
-
-function parseLines(text: string): string[] {
-  return (text || '')
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  kind:                    'adapter' | 'mcpServer';
+  name:                    string;
+  selectorMode:            SelectorMode;
+  selectorValue:           string;
+  resourcesSelectorMode:   SelectorMode;
+  resourcesSelectorValue:  string;
+  promptsSelectorMode:     SelectorMode;
+  promptsSelectorValue:    string;
 }
 
 function buildSelector(mode: SelectorMode, value: string): VirtualMCPSelector | undefined {
@@ -175,7 +210,7 @@ function buildSelector(mode: SelectorMode, value: string): VirtualMCPSelector | 
 
 export default defineComponent({
   name:       'VirtualMCP',
-  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpCard, AiUpPill, AiUpModal },
+  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpCard, AiUpPill, AiUpModal, AiUpPickerList },
   setup() {
     const routes      = ref<VirtualMCPRoute[]>([]);
     const search      = ref('');
@@ -188,6 +223,8 @@ export default defineComponent({
 
     const adapterOptions   = ref<string[]>([]);
     const mcpServerOptions = ref<string[]>([]);
+    const raPickerItems    = ref<{ id: string; label: string; sublabel?: string }[]>([]);
+    const selectedAcl      = ref<string[]>([]);
 
     const form = reactive<{
       name: string;
@@ -200,7 +237,6 @@ export default defineComponent({
       description: '',
       sources:     [],
     });
-    const aclText = ref('');
 
     const filtered = computed(() => {
       const q = search.value.trim().toLowerCase();
@@ -255,14 +291,22 @@ export default defineComponent({
         const list = (await registryApi.list()) || [];
         mcpServerOptions.value = list.map((s: any) => s.id || s.name).filter(Boolean);
       } catch { mcpServerOptions.value = []; }
+      try {
+        const list = (await routeAssignmentsApi.list()) || [];
+        raPickerItems.value = list.map((ra) => ({
+          id:       ra.id,
+          label:    ra.id,
+          sublabel: `${ ra.permissions || 'read' } · server: ${ ra.serverId || '—' }`,
+        }));
+      } catch { raPickerItems.value = []; }
     }
 
     function openCreate() {
       form.name        = '';
       form.exposedAs   = '';
       form.description = '';
-      form.sources     = [{ kind: 'adapter', name: '', selectorMode: 'all', selectorValue: '' }];
-      aclText.value    = '';
+      form.sources     = [{ kind: 'adapter', name: '', selectorMode: 'all', selectorValue: '', resourcesSelectorMode: 'all', resourcesSelectorValue: '', promptsSelectorMode: 'all', promptsSelectorValue: '' }];
+      selectedAcl.value = [];
       createError.value = null;
       creating.value   = true;
       loadOptions();
@@ -273,7 +317,7 @@ export default defineComponent({
     }
 
     function addSource() {
-      form.sources.push({ kind: 'adapter', name: '', selectorMode: 'all', selectorValue: '' });
+      form.sources.push({ kind: 'adapter', name: '', selectorMode: 'all', selectorValue: '', resourcesSelectorMode: 'all', resourcesSelectorValue: '', promptsSelectorMode: 'all', promptsSelectorValue: '' });
     }
 
     function removeSource(idx: number) {
@@ -288,8 +332,12 @@ export default defineComponent({
           const src: VirtualMCPSource = {};
           if (s.kind === 'adapter') src.adapterName = s.name.trim();
           else                      src.mcpServerName = s.name.trim();
-          const sel = buildSelector(s.selectorMode, s.selectorValue);
-          if (sel) src.tools = sel;
+          const toolsSel = buildSelector(s.selectorMode, s.selectorValue);
+          if (toolsSel) src.tools = toolsSel;
+          const resSel = buildSelector(s.resourcesSelectorMode, s.resourcesSelectorValue);
+          if (resSel) src.resources = resSel;
+          const promptsSel = buildSelector(s.promptsSelectorMode, s.promptsSelectorValue);
+          if (promptsSel) src.prompts = promptsSel;
           return src;
         });
 
@@ -298,7 +346,7 @@ export default defineComponent({
           exposedAs:   form.exposedAs.trim() || undefined,
           description: form.description.trim() || undefined,
           sources,
-          acl:         parseLines(aclText.value),
+          acl:         selectedAcl.value,
         };
 
         await vroutesApi.create(req);
@@ -329,7 +377,7 @@ export default defineComponent({
     return {
       routes, search, loading, error, deleting,
       creating, submitting, createError,
-      form, aclText, adapterOptions, mcpServerOptions,
+      form, selectedAcl, raPickerItems, adapterOptions, mcpServerOptions,
       filtered, canCreate,
       statusTone, selectorPlaceholder,
       refresh, openCreate, closeCreate, addSource, removeSource, submitCreate, confirmDelete,
@@ -390,6 +438,11 @@ export default defineComponent({
   font-weight:  600;
   color:        var(--body-text, #333);
   margin-bottom: 2px;
+}
+.ai-up-fieldset__optional {
+  font-weight: 400;
+  color:       var(--muted, #888);
+  margin-left: 4px;
 }
 .source-row {
   display:        flex;

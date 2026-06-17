@@ -51,6 +51,22 @@ func (h *RouteAssignmentHandler) WithCRClient(c client.Client, namespace string)
 	return h
 }
 
+// ListAllRouteAssignments lists all RouteAssignment CRs across all servers.
+func (h *RouteAssignmentHandler) ListAllRouteAssignments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.crClient != nil {
+		h.listAllRouteAssignmentCRs(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode([]models.RouteAssignment{})
+}
+
 // CreateRouteAssignmentRequest represents a request to create a route assignment
 type CreateRouteAssignmentRequest struct {
 	UserIDs     []string `json:"userIds,omitempty" example:"[\"user123\"]"`
