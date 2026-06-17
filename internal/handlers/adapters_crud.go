@@ -179,15 +179,23 @@ func (h *AdapterHandler) buildAdapterCR(ctx context.Context, req *CreateAdapterR
 	// missing, which surfaces cleanly to the caller via pollReady.
 	connectionType := mcpv1alpha1.ConnectionTypeSidecarStdio
 	var remoteURL string
-	var mcpServer mcpv1alpha1.MCPServer
-	mcpServerErr := h.crClient.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: req.MCPServerID}, &mcpServer)
-	if mcpServerErr == nil {
-		// MCPServer.Spec.URL maps to remote types in the existing API;
-		// when present, prefer RemoteHttp.
+	var sidecarConfig *mcpv1alpha1.SidecarConfig
+	mcpServer := h.findMCPServer(ctx, req.MCPServerID)
+	if mcpServer != nil {
 		if mcpServer.Spec.URL != "" {
 			connectionType = mcpv1alpha1.ConnectionTypeRemoteHTTP
 			remoteURL = mcpServer.Spec.URL
+		} else {
+			sidecarConfig = sidecarConfigFromMCPServer(mcpServer)
+			if sidecarConfig != nil && sidecarConfig.CommandType != "docker" {
+				connectionType = mcpv1alpha1.ConnectionTypeStreamableHTTP
+			}
 		}
+	}
+
+	mcpServerRefName := req.MCPServerID
+	if mcpServer != nil {
+		mcpServerRefName = mcpServer.Name
 	}
 
 	cr := &mcpv1alpha1.Adapter{
@@ -200,8 +208,9 @@ func (h *AdapterHandler) buildAdapterCR(ctx context.Context, req *CreateAdapterR
 		},
 		Spec: mcpv1alpha1.AdapterSpec{
 			Source: mcpv1alpha1.AdapterSource{
-				MCPServerRef: &corev1.LocalObjectReference{Name: req.MCPServerID},
-				RemoteURL:    remoteURL,
+				MCPServerRef:  &corev1.LocalObjectReference{Name: mcpServerRefName},
+				RemoteURL:     remoteURL,
+				SidecarConfig: sidecarConfig,
 			},
 			ConnectionType: connectionType,
 			Description:    req.Description,
@@ -225,6 +234,105 @@ func (h *AdapterHandler) buildAdapterCR(ctx context.Context, req *CreateAdapterR
 	}
 
 	return cr, secret, 0, nil
+}
+
+// findMCPServer resolves an MCPServer CR by exact name first, then falls
+// back to listing all MCPServers in the namespace and matching by name
+// suffix. Registry-created CRs are prefixed with the registry name
+// (e.g. "suse-ai-up-default-bugzilla") while the UI sends the short
+// entry name ("bugzilla").
+func (h *AdapterHandler) findMCPServer(ctx context.Context, id string) *mcpv1alpha1.MCPServer {
+	var srv mcpv1alpha1.MCPServer
+	if err := h.crClient.Get(ctx, client.ObjectKey{Namespace: h.namespace, Name: id}, &srv); err == nil {
+		return &srv
+	}
+	// MCPServer CRs live in the operator namespace (not the workload
+	// namespace), so list across all namespaces for the suffix fallback.
+	var list mcpv1alpha1.MCPServerList
+	if err := h.crClient.List(ctx, &list); err != nil {
+		return nil
+	}
+	suffix := "-" + id
+	for i := range list.Items {
+		if strings.HasSuffix(list.Items[i].Name, suffix) {
+			return &list.Items[i]
+		}
+	}
+	return nil
+}
+
+// sidecarConfigFromMCPServer derives an Adapter SidecarConfig from an
+// MCPServer CR. For docker/oci entries it uses the spec-level Image
+// directly. For python/npx/go entries it maps the commandType to a base
+// image and passes the command as the container entrypoint — mirroring
+// what the legacy SidecarManager.deployGenericWithKubeClient does.
+func sidecarConfigFromMCPServer(srv *mcpv1alpha1.MCPServer) *mcpv1alpha1.SidecarConfig {
+	image := srv.Spec.Image
+	port := srv.Spec.Port
+	cmdType := srv.Spec.CommandType
+	command := srv.Spec.Command
+
+	if image == "" {
+		for _, pkg := range srv.Spec.Packages {
+			if pkg.RegistryType == "oci" || pkg.RegistryType == "docker" {
+				image = pkg.Identifier
+				break
+			}
+		}
+	}
+
+	if image == "" && cmdType != "" {
+		image = baseImageForCommandType(cmdType)
+	}
+
+	if image == "" {
+		return nil
+	}
+
+	var env []corev1.EnvVar
+	for _, pkg := range srv.Spec.Packages {
+		for _, ev := range pkg.EnvironmentVariables {
+			if ev.Default != "" {
+				env = append(env, corev1.EnvVar{Name: ev.Name, Value: ev.Default})
+			}
+		}
+	}
+
+	effectiveType := cmdType
+	if effectiveType == "" {
+		effectiveType = "docker"
+	}
+
+	cfg := &mcpv1alpha1.SidecarConfig{
+		CommandType: effectiveType,
+		Image:       image,
+		Port:        port,
+		Env:         env,
+	}
+
+	if command != "" {
+		if effectiveType == "docker" {
+			cfg.Command = "sh"
+			cfg.Args = []string{"-c", command}
+		} else {
+			cfg.Command = command
+		}
+	}
+
+	return cfg
+}
+
+func baseImageForCommandType(ct string) string {
+	switch ct {
+	case "python":
+		return "registry.suse.com/bci/python:3.11"
+	case "npx":
+		return "registry.suse.com/bci/nodejs:22"
+	case "go":
+		return "registry.suse.com/bci/golang:1.25"
+	default:
+		return ""
+	}
 }
 
 // translateAdapterAuth maps the HTTP authentication DTO onto the

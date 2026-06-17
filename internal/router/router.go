@@ -264,11 +264,17 @@ func Register(r *gin.Engine, svc *bootstrap.AppServices) {
 			}
 		}
 
-		// Route assignment routes (under registry)
-		registry.POST("/:id/routes", ginToHTTPHandler(svc.RouteAssignmentHandler.CreateRouteAssignment))
+		// Route assignment routes (under registry). Reads are open; mutations
+		// require an authenticated caller so X-User-ID is set by the middleware
+		// before the handler checks CanManageGroups.
 		registry.GET("/:id/routes", ginToHTTPHandler(svc.RouteAssignmentHandler.ListRouteAssignments))
-		registry.PUT("/:id/routes/:assignmentId", ginToHTTPHandler(svc.RouteAssignmentHandler.UpdateRouteAssignment))
-		registry.DELETE("/:id/routes/:assignmentId", ginToHTTPHandler(svc.RouteAssignmentHandler.DeleteRouteAssignment))
+		protectedRegistry := registry.Group("")
+		protectedRegistry.Use(auth.UserAuthMiddleware(svc.UserAuthService))
+		{
+			protectedRegistry.POST("/:id/routes", ginToHTTPHandler(svc.RouteAssignmentHandler.CreateRouteAssignment))
+			protectedRegistry.PUT("/:id/routes/:assignmentId", ginToHTTPHandler(svc.RouteAssignmentHandler.UpdateRouteAssignment))
+			protectedRegistry.DELETE("/:id/routes/:assignmentId", ginToHTTPHandler(svc.RouteAssignmentHandler.DeleteRouteAssignment))
+		}
 
 		// Global route assignments (cross-server list for UI pickers)
 		v1.GET("/route-assignments", ginToHTTPHandler(svc.RouteAssignmentHandler.ListAllRouteAssignments))

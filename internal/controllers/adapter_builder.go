@@ -19,12 +19,16 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 
+	sandboxv1alpha1 "github.com/SUSE/suse-ai-up/api/sandbox/v1alpha1"
 	mcpv1alpha1 "github.com/SUSE/suse-ai-up/api/v1alpha1"
 )
 
@@ -54,6 +58,12 @@ const (
 	// selector label so Deployment <-> Service stay paired even if other
 	// labels shift over time.
 	adapterLabelKey = "mcp.suse.com/adapter"
+
+	// DefaultMCPProxyImage is the sidecar image used for Sandbox-backed
+	// adapters. It bundles mcp-proxy (Mode 2 — server-side) with Python/uv
+	// and Node.js runtimes so it can spawn any STDIO-based MCP server and
+	// expose it as streamable-HTTP.
+	DefaultMCPProxyImage = "suse-ai-up-mcp-proxy:latest"
 )
 
 // connectionTypeNeedsSidecar reports whether the proxy must materialize a
@@ -155,6 +165,84 @@ func BuildDeployment(adapter *mcpv1alpha1.Adapter, workloadNamespace string) (*a
 			Selector: &metav1.LabelSelector{MatchLabels: selector},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{container},
+				},
+			},
+		},
+	}, nil
+}
+
+// needsSandbox returns true when the adapter should be backed by an
+// agent-sandbox Sandbox rather than a raw Deployment. Docker/OCI images
+// that already expose HTTP go through BuildDeployment; everything else
+// (python, npx, go, …) gets wrapped in mcp-proxy inside a Sandbox.
+func needsSandbox(adapter *mcpv1alpha1.Adapter) bool {
+	if adapter.Spec.Source.SidecarConfig == nil {
+		return false
+	}
+	return adapter.Spec.Source.SidecarConfig.CommandType != "docker"
+}
+
+// BuildSandbox renders an agent-sandbox Sandbox CR for an Adapter whose
+// command type is not "docker". The Sandbox pod runs mcp-proxy in Mode 2
+// (server-side), which spawns the STDIO MCP server as a child process
+// and exposes streamable-HTTP on the configured port.
+func BuildSandbox(adapter *mcpv1alpha1.Adapter, workloadNamespace string) (*sandboxv1alpha1.Sandbox, error) {
+	if adapter.Spec.Source.SidecarConfig == nil {
+		return nil, ErrMissingSidecarConfig
+	}
+	cfg := adapter.Spec.Source.SidecarConfig
+
+	port := cfg.Port
+	if port == 0 {
+		port = defaultSidecarPort
+	}
+
+	command := cfg.Command
+	if command == "" {
+		return nil, fmt.Errorf("sandbox adapter requires Spec.Source.SidecarConfig.Command")
+	}
+
+	image := DefaultMCPProxyImage
+
+	args := []string{"--port=" + strconv.Itoa(int(port))}
+	if cfg.Command != "" {
+		// "--" separates mcp-proxy flags from the child command so
+		// child args like --bugzilla-server aren't parsed by mcp-proxy.
+		args = append(args, "--")
+		args = append(args, strings.Fields(cfg.Command)...)
+		args = append(args, cfg.Args...)
+	}
+
+	labels := sidecarLabels(adapter)
+
+	container := corev1.Container{
+		Name:            "mcp-proxy",
+		Image:           image,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"mcp-proxy"},
+		Args:            args,
+		Ports: []corev1.ContainerPort{{
+			Name:          "mcp",
+			ContainerPort: port,
+			Protocol:      corev1.ProtocolTCP,
+		}},
+		Env: cfg.Env,
+	}
+
+	return &sandboxv1alpha1.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      sidecarObjectName(adapter),
+			Namespace: workloadNamespace,
+			Labels:    labels,
+		},
+		Spec: sandboxv1alpha1.SandboxSpec{
+			Service: ptr.To(true),
+			PodTemplate: sandboxv1alpha1.PodTemplate{
+				Metadata: sandboxv1alpha1.PodMetadata{
+					Labels: labels,
+				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{container},
 				},

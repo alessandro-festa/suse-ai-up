@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	sandboxv1alpha1 "github.com/SUSE/suse-ai-up/api/sandbox/v1alpha1"
 	mcpv1alpha1 "github.com/SUSE/suse-ai-up/api/v1alpha1"
 )
 
@@ -54,6 +55,7 @@ type AdapterReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=agents.x-k8s.io,resources=sandboxes,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile drives the Adapter toward its declared state. The loop is
 // idempotent: every call computes the desired Deployment/Service shape from
@@ -105,19 +107,27 @@ func (r *AdapterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	if len(adapter.Spec.Variables) > 0 {
-		// Variable substitution is part of a follow-up PR — see the plan
-		// at /Users/alessandrofesta/.claude/plans/serene-finding-kernighan.md.
-		// Until then we pass env through verbatim and log so operators
-		// know their variables are not being expanded.
 		logger.Info("Spec.Variables is set but variable substitution is not implemented in this reconciler yet; values pass through verbatim",
 			"adapter", req.NamespacedName, "variableCount", len(adapter.Spec.Variables))
 	}
 
-	desiredDep, err := BuildDeployment(&adapter, r.WorkloadNamespace)
+	// Dispatch: Sandbox (mcp-proxy wrapping STDIO servers) vs Deployment
+	// (raw docker image that already speaks HTTP).
+	if needsSandbox(&adapter) {
+		return r.reconcileSandbox(ctx, &adapter, endpointURL)
+	}
+	return r.reconcileDeployment(ctx, &adapter, endpointURL)
+}
+
+// reconcileDeployment handles the Deployment+Service path for docker-type
+// adapters (the original code path, extracted for dispatch clarity).
+func (r *AdapterReconciler) reconcileDeployment(ctx context.Context, adapter *mcpv1alpha1.Adapter, endpointURL string) (ctrl.Result, error) {
+	desiredDep, err := BuildDeployment(adapter, r.WorkloadNamespace)
 	if err != nil {
 		reason, msg := classifyBuildError(err)
-		logger.Info("Adapter spec is not buildable by this reconciler", "adapter", req.NamespacedName, "reason", reason, "error", err.Error())
-		return r.patchStatus(ctx, &adapter, func(s *mcpv1alpha1.AdapterStatus) {
+		log.FromContext(ctx).Info("Adapter spec is not buildable by this reconciler",
+			"adapter", client.ObjectKeyFromObject(adapter), "reason", reason, "error", err.Error())
+		return r.patchStatus(ctx, adapter, func(s *mcpv1alpha1.AdapterStatus) {
 			s.Phase = mcpv1alpha1.AdapterPhaseFailed
 			s.EndpointURL = ""
 			setCondition(s, mcpv1alpha1.AdapterConditionSynced, metav1.ConditionFalse, reason, msg)
@@ -126,28 +136,22 @@ func (r *AdapterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		})
 	}
 
-	desiredSvc, err := BuildService(&adapter, r.WorkloadNamespace)
+	desiredSvc, err := BuildService(adapter, r.WorkloadNamespace)
 	if err != nil {
-		// BuildService only fails on ErrMissingSidecarConfig, already
-		// guarded above; treat unexpected errors as transient.
 		return ctrl.Result{}, fmt.Errorf("building service: %w", err)
 	}
 
-	if err := controllerutil.SetControllerReference(&adapter, desiredDep, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(adapter, desiredDep, r.Scheme); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting owner ref on deployment: %w", err)
 	}
-	if err := controllerutil.SetControllerReference(&adapter, desiredSvc, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(adapter, desiredSvc, r.Scheme); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting owner ref on service: %w", err)
 	}
 
-	// CreateOrUpdate mutates the in-cluster object via the mutate fn so
-	// drift (e.g. someone hand-edited the Deployment) is corrected on the
-	// next reconcile.
 	depObj := &appsv1.Deployment{}
 	desiredDep.DeepCopyInto(depObj)
 	depObj.ResourceVersion = ""
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, depObj, func() error {
-		// Keep server-assigned ObjectMeta intact; overwrite Spec + Labels.
 		depObj.Labels = desiredDep.Labels
 		depObj.Spec = desiredDep.Spec
 		depObj.OwnerReferences = desiredDep.OwnerReferences
@@ -161,7 +165,6 @@ func (r *AdapterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	svcObj.ResourceVersion = ""
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, svcObj, func() error {
 		svcObj.Labels = desiredSvc.Labels
-		// Service.Spec.ClusterIP is immutable post-create; preserve it.
 		clusterIP := svcObj.Spec.ClusterIP
 		svcObj.Spec = desiredSvc.Spec
 		if clusterIP != "" {
@@ -173,13 +176,12 @@ func (r *AdapterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, fmt.Errorf("upserting service: %w", err)
 	}
 
-	// Re-read the deployment to base status on observed (not desired) state.
 	var observedDep appsv1.Deployment
 	if err := r.Get(ctx, client.ObjectKeyFromObject(depObj), &observedDep); err != nil {
 		return ctrl.Result{}, fmt.Errorf("reading back deployment for status: %w", err)
 	}
 
-	return r.patchStatus(ctx, &adapter, func(s *mcpv1alpha1.AdapterStatus) {
+	return r.patchStatus(ctx, adapter, func(s *mcpv1alpha1.AdapterStatus) {
 		s.EndpointURL = endpointURL
 		s.SidecarDeploymentRef = &corev1.LocalObjectReference{Name: observedDep.Name}
 		s.ObservedGeneration = adapter.Generation
@@ -198,6 +200,77 @@ func (r *AdapterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		setCondition(s, mcpv1alpha1.AdapterConditionSynced, metav1.ConditionTrue,
 			"InSync", "Deployment and Service reconciled to desired state.")
 	})
+}
+
+// reconcileSandbox handles the agent-sandbox Sandbox path for non-docker
+// adapters. The Sandbox pod runs mcp-proxy wrapping the STDIO MCP server;
+// agent-sandbox creates a ClusterIP Service automatically when
+// Spec.Service=true.
+func (r *AdapterReconciler) reconcileSandbox(ctx context.Context, adapter *mcpv1alpha1.Adapter, endpointURL string) (ctrl.Result, error) {
+	desiredSandbox, err := BuildSandbox(adapter, r.WorkloadNamespace)
+	if err != nil {
+		reason, msg := classifyBuildError(err)
+		log.FromContext(ctx).Info("Adapter spec is not buildable as Sandbox",
+			"adapter", client.ObjectKeyFromObject(adapter), "reason", reason, "error", err.Error())
+		return r.patchStatus(ctx, adapter, func(s *mcpv1alpha1.AdapterStatus) {
+			s.Phase = mcpv1alpha1.AdapterPhaseFailed
+			s.EndpointURL = ""
+			setCondition(s, mcpv1alpha1.AdapterConditionSynced, metav1.ConditionFalse, reason, msg)
+			setCondition(s, mcpv1alpha1.AdapterConditionReady, metav1.ConditionFalse, reason, msg)
+			s.ObservedGeneration = adapter.Generation
+		})
+	}
+
+	if err := controllerutil.SetControllerReference(adapter, desiredSandbox, r.Scheme); err != nil {
+		return ctrl.Result{}, fmt.Errorf("setting owner ref on sandbox: %w", err)
+	}
+
+	sbxObj := &sandboxv1alpha1.Sandbox{}
+	desiredSandbox.DeepCopyInto(sbxObj)
+	sbxObj.ResourceVersion = ""
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, sbxObj, func() error {
+		sbxObj.Labels = desiredSandbox.Labels
+		sbxObj.Spec = desiredSandbox.Spec
+		sbxObj.OwnerReferences = desiredSandbox.OwnerReferences
+		return nil
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("upserting sandbox: %w", err)
+	}
+
+	var observedSandbox sandboxv1alpha1.Sandbox
+	if err := r.Get(ctx, client.ObjectKeyFromObject(sbxObj), &observedSandbox); err != nil {
+		return ctrl.Result{}, fmt.Errorf("reading back sandbox for status: %w", err)
+	}
+
+	return r.patchStatus(ctx, adapter, func(s *mcpv1alpha1.AdapterStatus) {
+		s.EndpointURL = endpointURL
+		s.SidecarDeploymentRef = &corev1.LocalObjectReference{Name: observedSandbox.Name}
+		s.ObservedGeneration = adapter.Generation
+
+		ready := sandboxIsReady(&observedSandbox)
+		if ready {
+			s.Phase = mcpv1alpha1.AdapterPhaseReady
+			setCondition(s, mcpv1alpha1.AdapterConditionReady, metav1.ConditionTrue,
+				"SandboxReady", fmt.Sprintf("Sandbox %s is ready.", observedSandbox.Name))
+		} else {
+			s.Phase = mcpv1alpha1.AdapterPhaseProvisioning
+			setCondition(s, mcpv1alpha1.AdapterConditionReady, metav1.ConditionFalse,
+				"SandboxNotReady", fmt.Sprintf("Sandbox %s is not ready yet.", observedSandbox.Name))
+		}
+		setCondition(s, mcpv1alpha1.AdapterConditionSynced, metav1.ConditionTrue,
+			"InSync", "Sandbox reconciled to desired state.")
+	})
+}
+
+// sandboxIsReady checks the agent-sandbox Sandbox status conditions for
+// a "Ready" condition with status True.
+func sandboxIsReady(sbx *sandboxv1alpha1.Sandbox) bool {
+	for _, c := range sbx.Status.Conditions {
+		if c.Type == "Ready" && c.Status == metav1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 // classifyBuildError maps a builder error to a stable (Reason, Message) pair
@@ -262,6 +335,7 @@ func (r *AdapterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&mcpv1alpha1.Adapter{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
+		Owns(&sandboxv1alpha1.Sandbox{}).
 		Named("adapter").
 		Complete(r)
 }

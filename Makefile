@@ -17,6 +17,7 @@
 
 # ---- Image / version ---------------------------------------------------------
 IMG ?= suse-ai-up-manager:latest
+MCP_PROXY_IMG ?= suse-ai-up-mcp-proxy:latest
 ENVTEST_K8S_VERSION = 1.31.0
 
 # ---- Shell / common setup ----------------------------------------------------
@@ -166,6 +167,10 @@ docker-build-uniproxy: ## Build the uniproxy docker image.
 # Backward-compat alias.
 .PHONY: docker-build-manager
 docker-build-manager: docker-build-uniproxy ## Deprecated alias for docker-build-uniproxy.
+
+.PHONY: docker-build-mcp-proxy
+docker-build-mcp-proxy: ## Build the mcp-proxy sidecar image (agent-sandbox pods).
+	$(CONTAINER_TOOL) build -t ${MCP_PROXY_IMG} hack/images/mcp-proxy
 
 .PHONY: docker-push-uniproxy
 docker-push-uniproxy: ## Push the uniproxy docker image.
