@@ -19,19 +19,107 @@
       Failed to load adapters: {{ error }}
     </div>
 
-    <div v-if="loading && !adapters.length" class="ai-up-empty">Loading adapters...</div>
+    <div v-if="!detail && loading && !adapters.length" class="ai-up-empty">Loading adapters...</div>
 
-    <div v-else-if="!filtered.length && !error" class="ai-up-empty">
+    <div v-else-if="!detail && !filtered.length && !error" class="ai-up-empty">
       <p v-if="search">No adapters match "{{ search }}".</p>
       <p v-else>No adapters yet. Create one to proxy an MCP server.</p>
     </div>
 
-    <AiUpGallery v-else>
+    <!-- Adapter detail view -->
+    <template v-else-if="detail">
+      <div class="detail-back">
+        <button class="ai-up-btn ai-up-btn--ghost" @click="closeDetail">← Back to list</button>
+        <h3 class="detail-title">{{ detail.name }}</h3>
+        <AiUpPill :tone="statusTone(detail.status)" :label="detail.status || 'unknown'" />
+      </div>
+
+      <AiUpTabs :tabs="detailTabs" :active="detailTab" @update:active="detailTab = $event" />
+
+      <!-- Overview -->
+      <template v-if="detailTab === 'overview'">
+        <div class="detail-grid">
+          <div class="detail-kv"><span class="detail-kv__k">Name</span><span>{{ detail.name }}</span></div>
+          <div v-if="detail.description" class="detail-kv"><span class="detail-kv__k">Description</span><span>{{ detail.description }}</span></div>
+          <div v-if="detail.url" class="detail-kv"><span class="detail-kv__k">URL</span><code class="ai-up-truncate">{{ detail.url }}</code></div>
+          <div v-if="detail.mcpServerId" class="detail-kv"><span class="detail-kv__k">MCP Server</span><span>{{ detail.mcpServerId }}</span></div>
+          <div v-if="detail.id" class="detail-kv"><span class="detail-kv__k">ID</span><code>{{ detail.id }}</code></div>
+        </div>
+      </template>
+
+      <!-- Tools -->
+      <template v-if="detailTab === 'tools'">
+        <div v-if="detailLoading" class="ai-up-empty">Loading tools...</div>
+        <div v-else-if="!detailTools.length" class="ai-up-empty">No tools exposed by this adapter.</div>
+        <table v-else class="detail-table">
+          <thead><tr><th>Name</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr v-for="t in detailTools" :key="t.name || JSON.stringify(t)">
+              <td><code>{{ t.name || '—' }}</code></td>
+              <td>{{ t.description || '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </template>
+
+      <!-- Resources -->
+      <template v-if="detailTab === 'resources'">
+        <div v-if="detailLoading" class="ai-up-empty">Loading resources...</div>
+        <div v-else-if="!detailResources.length" class="ai-up-empty">No resources exposed by this adapter.</div>
+        <table v-else class="detail-table">
+          <thead><tr><th>URI</th><th>Name</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr v-for="r in detailResources" :key="r.uri || r.name || JSON.stringify(r)">
+              <td><code>{{ r.uri || '—' }}</code></td>
+              <td>{{ r.name || '—' }}</td>
+              <td>{{ r.description || '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </template>
+
+      <!-- Prompts -->
+      <template v-if="detailTab === 'prompts'">
+        <div v-if="detailLoading" class="ai-up-empty">Loading prompts...</div>
+        <div v-else-if="!detailPrompts.length" class="ai-up-empty">No prompts exposed by this adapter.</div>
+        <table v-else class="detail-table">
+          <thead><tr><th>Name</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr v-for="p in detailPrompts" :key="p.name || JSON.stringify(p)">
+              <td><code>{{ p.name || '—' }}</code></td>
+              <td>{{ p.description || '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </template>
+
+      <!-- Health & Actions -->
+      <template v-if="detailTab === 'health'">
+        <div class="detail-actions">
+          <button class="ai-up-btn" :disabled="healthChecking" @click="runHealthCheck">
+            {{ healthChecking ? 'Checking...' : 'Run health check' }}
+          </button>
+          <button class="ai-up-btn ai-up-btn--ghost" :disabled="syncing" @click="runSync">
+            {{ syncing ? 'Syncing...' : 'Sync capabilities' }}
+          </button>
+        </div>
+        <div v-if="healthResult !== null" class="ai-up-banner" :class="healthResult ? 'ai-up-banner--success' : 'ai-up-banner--error'">
+          {{ healthResult ? 'Adapter is healthy.' : 'Health check failed.' }}
+        </div>
+        <div v-if="syncDone" class="ai-up-banner ai-up-banner--success">
+          Capabilities synced successfully.
+        </div>
+      </template>
+    </template>
+
+    <!-- Adapter list (gallery) -->
+    <AiUpGallery v-else-if="filtered.length || error">
       <AiUpCard
         v-for="a in filtered"
         :key="a.id || a.name"
         :title="a.name"
         :subtitle="a.description || ''"
+        @click="openDetail(a)"
       >
         <template #pill>
           <AiUpPill :tone="statusTone(a.status)" :label="a.status || 'unknown'" />
@@ -42,7 +130,7 @@
         </template>
         <p v-if="a.id" class="ai-up-muted">ID: <code>{{ a.id }}</code></p>
         <template #actions>
-          <button class="ai-up-btn ai-up-btn--danger" :disabled="deleting === a.name" @click="confirmDelete(a)">
+          <button class="ai-up-btn ai-up-btn--danger" :disabled="deleting === a.name" @click.stop="confirmDelete(a)">
             {{ deleting === a.name ? 'Deleting...' : 'Delete' }}
           </button>
         </template>
@@ -230,6 +318,7 @@ import AiUpCard from '../components/AiUpCard.vue';
 import AiUpPill from '../components/AiUpPill.vue';
 import AiUpModal from '../components/AiUpModal.vue';
 import AiUpPickerList from '../components/AiUpPickerList.vue';
+import AiUpTabs from '../components/AiUpTabs.vue';
 import { adaptersApi, Adapter } from '../services/adapters';
 import { registryApi } from '../services/registry';
 import { usersApi } from '../services/users';
@@ -265,7 +354,7 @@ function parseEnvText(text: string): Record<string, string> {
 
 export default defineComponent({
   name:       'MCPGateway',
-  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpCard, AiUpPill, AiUpModal, AiUpPickerList },
+  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpCard, AiUpPill, AiUpModal, AiUpPickerList, AiUpTabs },
   setup() {
     const adapters       = ref<ListAdapter[]>([]);
     const registryViews  = ref<RegistryView[]>([]);
@@ -494,6 +583,83 @@ export default defineComponent({
       }
     }
 
+    // --- Adapter detail view ---
+    const detail          = ref<ListAdapter | null>(null);
+    const detailTab       = ref('overview');
+    const detailLoading   = ref(false);
+    const detailTools     = ref<any[]>([]);
+    const detailResources = ref<any[]>([]);
+    const detailPrompts   = ref<any[]>([]);
+    const healthChecking  = ref(false);
+    const healthResult    = ref<boolean | null>(null);
+    const syncing         = ref(false);
+    const syncDone        = ref(false);
+
+    const detailTabs = [
+      { key: 'overview',  label: 'Overview' },
+      { key: 'tools',     label: 'Tools' },
+      { key: 'resources', label: 'Resources' },
+      { key: 'prompts',   label: 'Prompts' },
+      { key: 'health',    label: 'Health' },
+    ];
+
+    async function openDetail(a: ListAdapter) {
+      detail.value        = a;
+      detailTab.value     = 'overview';
+      detailTools.value   = [];
+      detailResources.value = [];
+      detailPrompts.value = [];
+      healthResult.value  = null;
+      syncDone.value      = false;
+      detailLoading.value = true;
+      try {
+        const [tools, resources, prompts] = await Promise.all([
+          adaptersApi.tools(a.name).catch(() => []),
+          adaptersApi.resources(a.name).catch(() => []),
+          adaptersApi.prompts(a.name).catch(() => []),
+        ]);
+        detailTools.value     = (tools || []) as any[];
+        detailResources.value = (resources || []) as any[];
+        detailPrompts.value   = (prompts || []) as any[];
+      } finally {
+        detailLoading.value = false;
+      }
+    }
+
+    function closeDetail() {
+      detail.value = null;
+    }
+
+    async function runHealthCheck() {
+      if (!detail.value) return;
+      healthChecking.value = true;
+      healthResult.value   = null;
+      try {
+        const r = await adaptersApi.health(detail.value.name);
+        healthResult.value = !!(r as any)?.healthy;
+      } catch {
+        healthResult.value = false;
+      } finally {
+        healthChecking.value = false;
+      }
+    }
+
+    async function runSync() {
+      if (!detail.value) return;
+      syncing.value  = true;
+      syncDone.value = false;
+      try {
+        await adaptersApi.sync(detail.value.name);
+        syncDone.value = true;
+        // Reload tools/resources/prompts after sync
+        await openDetail(detail.value);
+      } catch {
+        // silent — the user sees tools didn't update
+      } finally {
+        syncing.value = false;
+      }
+    }
+
     onMounted(refresh);
 
     return {
@@ -504,6 +670,11 @@ export default defineComponent({
       filtered, pickFiltered, modalTitle, canCreate,
       statusTone,
       refresh, openCreate, closeCreate, selectEntry, submitCreate, confirmDelete,
+      // Detail view
+      detail, detailTab, detailTabs, detailLoading,
+      detailTools, detailResources, detailPrompts,
+      healthChecking, healthResult, syncing, syncDone,
+      openDetail, closeDetail, runHealthCheck, runSync,
     };
   },
 });
@@ -779,4 +950,58 @@ export default defineComponent({
 }
 .selected-banner__body strong { font-size: 13px; }
 .selected-banner__body small  { font-size: 11px; color: var(--muted, #888); }
+
+// Detail view
+.detail-back {
+  display:     flex;
+  align-items: center;
+  gap:         12px;
+  margin-bottom: 8px;
+}
+.detail-title {
+  margin: 0;
+  font-size: 16px;
+}
+.detail-grid {
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
+}
+.detail-kv {
+  display:               grid;
+  grid-template-columns: 120px 1fr;
+  gap:                   8px;
+  font-size:             13px;
+}
+.detail-kv__k {
+  color:       var(--muted, #888);
+  font-size:   12px;
+  font-weight: 600;
+}
+.detail-table {
+  width:           100%;
+  border-collapse: collapse;
+  font-size:       13px;
+}
+.detail-table th {
+  text-align:    left;
+  font-size:     12px;
+  font-weight:   600;
+  color:         var(--muted, #888);
+  border-bottom: 1px solid var(--border, #ddd);
+  padding:       6px 8px;
+}
+.detail-table td {
+  padding:       6px 8px;
+  border-bottom: 1px solid var(--border-light, #eee);
+}
+.detail-actions {
+  display: flex;
+  gap:     8px;
+}
+.ai-up-banner--success {
+  background: var(--success-banner-bg, rgba(22, 163, 74, 0.1));
+  color:      #15803d;
+  border:     1px solid #16a34a;
+}
 </style>

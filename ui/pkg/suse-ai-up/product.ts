@@ -51,6 +51,8 @@ export function init($plugin: IPlugin, rancherStore: RancherStore) {
       PAGE_TYPES.MCP_REGISTRY,
       PAGE_TYPES.VIRTUAL_MCP,
       PAGE_TYPES.SMART_AGENTS,
+      PAGE_TYPES.DISCOVERY,
+      PAGE_TYPES.PLUGINS,
       PAGE_TYPES.SETTINGS,
     ],
     PAGE_TYPES.GROUP,
