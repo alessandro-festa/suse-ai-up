@@ -26,6 +26,12 @@ export default [
     meta:      { product: PRODUCT, category: PAGE_TYPES.MCP_REGISTRY },
   },
   {
+    name:      ROUTE_NAMES.REGISTRY_SOURCES,
+    path:      `/c/:cluster/${PRODUCT}/${PAGE_TYPES.REGISTRY_SOURCES}`,
+    component: () => import('./pages/RegistrySources.vue'),
+    meta:      { product: PRODUCT, category: PAGE_TYPES.REGISTRY_SOURCES },
+  },
+  {
     name:      ROUTE_NAMES.VIRTUAL_MCP,
     path:      `/c/:cluster/${PRODUCT}/${PAGE_TYPES.VIRTUAL_MCP}`,
     component: () => import('./pages/VirtualMCP.vue'),

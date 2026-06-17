@@ -49,6 +49,7 @@ export function init($plugin: IPlugin, rancherStore: RancherStore) {
       PAGE_TYPES.HOME,
       PAGE_TYPES.MCP_GATEWAY,
       PAGE_TYPES.MCP_REGISTRY,
+      PAGE_TYPES.REGISTRY_SOURCES,
       PAGE_TYPES.VIRTUAL_MCP,
       PAGE_TYPES.SMART_AGENTS,
       PAGE_TYPES.DISCOVERY,
