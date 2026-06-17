@@ -163,17 +163,24 @@ func Register(r *gin.Engine, svc *bootstrap.AppServices) {
 			registry.DELETE("/:id", svc.RegistryHandler.DeleteMCPServer)
 		}
 
-		// VirtualMCPRoute hot path (P2.5b). Only registered when the
-		// VirtualMCPRouteHandler was constructed (i.e. CR mode); legacy
-		// mode leaves the handler nil and skips the route entirely.
-		// Wrapped in the same auth.UserAuthMiddleware pattern as the
-		// adapter /mcp endpoint.
+		// VirtualMCPRoutes. Two surfaces under /api/v1/vroutes:
+		//   - CRUD (list/get/create/update/delete) — handler self-gates
+		//     mutations via UserGroupService.
+		//   - Protocol dispatch (/:name/mcp) — JWT-gated JSON-RPC entry
+		//     for tools/list and tools/call (P2.5b).
+		// Both rely on CR-mode (crClient + reconciler); legacy mode
+		// leaves the handler nil and skips the whole group.
 		if svc.VirtualMCPRouteHandler != nil {
 			vroutes := v1.Group("/vroutes")
-			vroutes.Use(auth.UserAuthMiddleware(svc.UserAuthService))
-			{
-				vroutes.Any("/:name/mcp", ginToHTTPHandler(svc.VirtualMCPRouteHandler.HandleVirtualMCPProtocol))
-			}
+			vroutes.GET("", ginToHTTPHandler(svc.VirtualMCPRouteHandler.ListVirtualMCPRoutes))
+			vroutes.POST("", ginToHTTPHandler(svc.VirtualMCPRouteHandler.CreateVirtualMCPRoute))
+			vroutes.GET("/:name", ginToHTTPHandler(svc.VirtualMCPRouteHandler.GetVirtualMCPRoute))
+			vroutes.PUT("/:name", ginToHTTPHandler(svc.VirtualMCPRouteHandler.UpdateVirtualMCPRoute))
+			vroutes.DELETE("/:name", ginToHTTPHandler(svc.VirtualMCPRouteHandler.DeleteVirtualMCPRoute))
+
+			protectedVRoutes := vroutes.Group("")
+			protectedVRoutes.Use(auth.UserAuthMiddleware(svc.UserAuthService))
+			protectedVRoutes.Any("/:name/mcp", ginToHTTPHandler(svc.VirtualMCPRouteHandler.HandleVirtualMCPProtocol))
 		}
 
 		// Agents. Two surfaces under /api/v1/agents:
