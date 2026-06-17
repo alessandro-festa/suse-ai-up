@@ -11,6 +11,7 @@ set -euo pipefail
 CLUSTER_NAME="uniproxy-rancher"
 RANCHER_VERSION="${RANCHER_VERSION:-v2.14.1}"
 CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.20.2}"
+AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v0.4.6}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # rancher.localtest.me resolves to 127.0.0.1 via public DNS — no /etc/hosts
@@ -57,6 +58,9 @@ helm upgrade --install cert-manager jetstack/cert-manager \
 
 echo "==> waiting for cert-manager webhook"
 "${KUBECTL[@]}" -n cert-manager wait --for=condition=Available deploy/cert-manager-webhook --timeout=120s
+
+echo "==> installing agent-sandbox CRDs ${AGENT_SANDBOX_VERSION}"
+"${KUBECTL[@]}" apply -f "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/manifest.yaml"
 
 echo "==> installing Rancher ${RANCHER_VERSION} at https://${RANCHER_HOSTNAME}"
 helm upgrade --install rancher rancher-stable/rancher \

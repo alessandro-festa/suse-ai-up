@@ -15,6 +15,7 @@ CLUSTER_NAME="uniproxy-e2e"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 IMG="${IMG:-suse-ai-up-manager:latest}"
+AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v0.4.6}"
 RELEASE_NAMESPACE="${RELEASE_NAMESPACE:-suse-ai-up}"
 SAMPLES_DIR="${REPO_ROOT}/config/samples"
 E2E_TIMEOUT="${E2E_TIMEOUT:-5m}"
@@ -41,6 +42,9 @@ if docker image inspect "${IMG}" >/dev/null 2>&1 \
 else
   log "image ${IMG} not in local cache; chart will pull from registry"
 fi
+
+log "installing agent-sandbox CRDs ${AGENT_SANDBOX_VERSION}"
+"${KUBECTL[@]}" apply -f "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/manifest.yaml" >/dev/null
 
 log "helm install (release namespace ${RELEASE_NAMESPACE})"
 helm upgrade --install suse-ai-up "${REPO_ROOT}/charts/suse-ai-up" \

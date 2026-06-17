@@ -18,6 +18,7 @@ CLUSTER_NAME="uniproxy-smoke"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 IMG="${IMG:-suse-ai-up-manager:latest}"
+AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v0.4.6}"
 RELEASE_NAMESPACE="${RELEASE_NAMESPACE:-suse-ai-up}"
 SAMPLES_DIR="${REPO_ROOT}/config/samples"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-5m}"
@@ -45,6 +46,9 @@ if docker image inspect "${IMG}" >/dev/null 2>&1 \
 else
   echo "==> image ${IMG} not found locally; helm install will pull from the registry"
 fi
+
+echo "==> installing agent-sandbox CRDs ${AGENT_SANDBOX_VERSION}"
+"${KUBECTL[@]}" apply -f "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/manifest.yaml"
 
 echo "==> helm install / upgrade suse-ai-up (release namespace: ${RELEASE_NAMESPACE})"
 # The chart bundles CRDs under charts/suse-ai-up/crds/ so the first

@@ -31,6 +31,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	sandboxv1alpha1 "github.com/SUSE/suse-ai-up/api/sandbox/v1alpha1"
 	mcpv1alpha1 "github.com/SUSE/suse-ai-up/api/v1alpha1"
 	"github.com/SUSE/suse-ai-up/internal/config"
 	"github.com/SUSE/suse-ai-up/internal/controllers"
@@ -51,6 +52,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(mcpv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(sandboxv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

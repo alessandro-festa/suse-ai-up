@@ -102,6 +102,17 @@ type MCPServerSpec struct {
 	// +optional
 	Image string `json:"image,omitempty"`
 
+	// Command is the entrypoint command for non-containerized servers
+	// (commandType python/npx/pip). Derived from meta.sidecarConfig.command
+	// in registry YAML entries.
+	// +optional
+	Command string `json:"command,omitempty"`
+
+	// CommandType identifies the launcher family (docker, npx, python, pip).
+	// Derived from meta.sidecarConfig.commandType in registry YAML entries.
+	// +optional
+	CommandType string `json:"commandType,omitempty"`
+
 	// Port is the network port the server listens on.
 	// +optional
 	// +kubebuilder:validation:Minimum=1

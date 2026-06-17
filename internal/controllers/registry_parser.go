@@ -76,7 +76,7 @@ func mapToMCPServerSpec(entry map[string]interface{}) mcpv1alpha1.MCPServerSpec 
 	if v, ok := entry["version"].(string); ok {
 		spec.Version = v
 	}
-	if v, ok := entry["image"].(string); ok && v != "" {
+	if v, ok := entry["image"].(string); ok && v != "" && v != "none" {
 		spec.Image = v
 		spec.Packages = []mcpv1alpha1.MCPServerPackage{{
 			RegistryType: "oci",
@@ -105,6 +105,22 @@ func mapToMCPServerSpec(entry map[string]interface{}) mcpv1alpha1.MCPServerSpec 
 			for _, t := range tags {
 				if s, ok := t.(string); ok {
 					spec.Tags = append(spec.Tags, s)
+				}
+			}
+		}
+		if sc, ok := meta["sidecarConfig"].(map[string]interface{}); ok {
+			if ct, ok := sc["commandType"].(string); ok {
+				spec.CommandType = ct
+			}
+			if cmd, ok := sc["command"].(string); ok {
+				spec.Command = cmd
+			}
+			if spec.Port == 0 {
+				switch p := sc["port"].(type) {
+				case int:
+					spec.Port = int32(p)
+				case float64:
+					spec.Port = int32(p)
 				}
 			}
 		}

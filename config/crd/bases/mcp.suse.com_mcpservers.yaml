@@ -72,6 +72,17 @@ spec:
                 items:
                   type: string
                 type: array
+              command:
+                description: |-
+                  Command is the entrypoint command for non-containerized servers
+                  (commandType python/npx/pip). Derived from meta.sidecarConfig.command
+                  in registry YAML entries.
+                type: string
+              commandType:
+                description: |-
+                  CommandType identifies the launcher family (docker, npx, python, pip).
+                  Derived from meta.sidecarConfig.commandType in registry YAML entries.
+                type: string
               description:
                 description: Description is a short summary of what this server provides.
                 type: string
