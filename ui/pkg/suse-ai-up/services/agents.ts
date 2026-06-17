@@ -8,10 +8,22 @@ export interface AgentTool {
   virtualMCPRouteName?: string;
 }
 
+export interface KeySelector {
+  name: string;
+  key:  string;
+}
+
+export interface EnvVarSource {
+  name:            string;
+  secretKeyRef?:   KeySelector;
+  configMapKeyRef?: KeySelector;
+}
+
 export interface AgentRuntime {
   image?:    string;
   args?:     string[];
   env?:      Record<string, string>;
+  envFrom?:  EnvVarSource[];
   port?:     number;
   replicas?: number;
 }
