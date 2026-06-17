@@ -11,6 +11,7 @@
             <template v-if="isRancherMode">. Local admin sign-in is still required to apply Access Control changes.</template>
           </span>
         </div>
+        <button class="ai-up-btn ai-up-btn--ghost" @click="openChangePassword">Change password</button>
         <button class="ai-up-btn ai-up-btn--ghost" @click="signOut">Sign out</button>
       </template>
       <template v-else>
@@ -402,6 +403,30 @@
       </template>
     </AiUpModal>
 
+    <!-- =========== Change password modal =========== -->
+    <AiUpModal :open="changePwdOpen" title="Change password" @close="closeChangePassword">
+      <label class="ai-up-field">
+        <span>Current password <em>*</em></span>
+        <input v-model="changePwdForm.current" type="password" class="ai-up-input" autocomplete="current-password" />
+      </label>
+      <label class="ai-up-field">
+        <span>New password <em>*</em></span>
+        <input v-model="changePwdForm.newPwd" type="password" class="ai-up-input" autocomplete="new-password" />
+      </label>
+      <label class="ai-up-field">
+        <span>Confirm new password <em>*</em></span>
+        <input v-model="changePwdForm.confirm" type="password" class="ai-up-input" autocomplete="new-password" @keyup.enter="submitChangePassword" />
+      </label>
+      <div v-if="changePwdError" class="ai-up-banner ai-up-banner--error">{{ changePwdError }}</div>
+      <div v-if="changePwdSuccess" class="ai-up-banner ai-up-banner--success">Password changed successfully.</div>
+      <template #actions>
+        <button class="ai-up-btn ai-up-btn--ghost" @click="closeChangePassword">Cancel</button>
+        <button class="ai-up-btn" :disabled="!canChangePassword || changingPwd" @click="submitChangePassword">
+          {{ changingPwd ? 'Changing...' : 'Change password' }}
+        </button>
+      </template>
+    </AiUpModal>
+
     <!-- =========== Group members modal =========== -->
     <AiUpModal :open="!!membersGroup" :title="membersGroup ? `Manage members of ${ membersGroup.name || membersGroup.id }` : ''" @close="membersGroup = null">
       <p class="ai-up-muted">Pick which users belong to this group. Changes apply on Save.</p>
@@ -591,6 +616,49 @@ export default defineComponent({
       setStoredToken(null);
       setStoredUser(null);
       authUser.value = null;
+    }
+
+    // -------------------------------------------------- change password
+    const changePwdOpen    = ref(false);
+    const changingPwd      = ref(false);
+    const changePwdError   = ref<string | null>(null);
+    const changePwdSuccess = ref(false);
+    const changePwdForm    = reactive({ current: '', newPwd: '', confirm: '' });
+
+    const canChangePassword = computed(() =>
+      !!changePwdForm.current
+      && !!changePwdForm.newPwd
+      && changePwdForm.newPwd === changePwdForm.confirm,
+    );
+
+    function openChangePassword() {
+      changePwdForm.current = '';
+      changePwdForm.newPwd  = '';
+      changePwdForm.confirm = '';
+      changePwdError.value   = null;
+      changePwdSuccess.value = false;
+      changePwdOpen.value    = true;
+    }
+
+    function closeChangePassword() {
+      changePwdOpen.value = false;
+    }
+
+    async function submitChangePassword() {
+      changingPwd.value    = true;
+      changePwdError.value = null;
+      changePwdSuccess.value = false;
+      try {
+        await authApi.changePassword(changePwdForm.current, changePwdForm.newPwd);
+        changePwdSuccess.value = true;
+        changePwdForm.current = '';
+        changePwdForm.newPwd  = '';
+        changePwdForm.confirm = '';
+      } catch (e: any) {
+        changePwdError.value = e?.data?.error || e?.message || 'Failed to change password';
+      } finally {
+        changingPwd.value = false;
+      }
     }
 
     // Auto-open the sign-in modal when any request returned 401
@@ -883,6 +951,8 @@ export default defineComponent({
       // account
       authUser, signInOpen, signingIn, signInError, signInForm, canSignIn,
       openSignIn, closeSignIn, signIn, signOut,
+      changePwdOpen, changingPwd, changePwdError, changePwdSuccess, changePwdForm,
+      canChangePassword, openChangePassword, closeChangePassword, submitChangePassword,
       // identity
       identityProvider, effectiveProvider, isRancherMode, firstLoginOpen,
       roleMap, pickProvider, addRoleRule, deleteRoleRule, saveRoleMap, resetRoleMap,
@@ -1041,6 +1111,11 @@ export default defineComponent({
   background: var(--error-banner-bg, rgba(220, 38, 38, 0.1));
   color:      var(--error, #dc2626);
   border:     1px solid var(--error, #dc2626);
+}
+.ai-up-banner--success {
+  background: var(--success-banner-bg, rgba(22, 163, 74, 0.1));
+  color:      #15803d;
+  border:     1px solid #16a34a;
 }
 
 .chip-row {

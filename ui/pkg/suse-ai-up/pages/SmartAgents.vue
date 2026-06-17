@@ -114,16 +114,37 @@
         </label>
         <label class="ai-up-field">
           <span>Environment variables</span>
-          <small class="ai-up-muted">One <code>KEY=value</code> per line. Secret refs need kubectl.</small>
+          <small class="ai-up-muted">One <code>KEY=value</code> per line.</small>
           <textarea v-model="form.runtime.envText" class="ai-up-textarea" rows="3" placeholder="LOG_LEVEL=debug" />
         </label>
+        <div class="ai-up-fieldset">
+          <div class="ai-up-fieldset__legend">Secret / ConfigMap references</div>
+          <p class="ai-up-muted">Inject values from existing Kubernetes Secrets or ConfigMaps.</p>
+          <div v-for="(ef, idx) in form.envFrom" :key="idx" class="envfrom-row">
+            <input v-model="ef.name" class="ai-up-input" placeholder="ENV_VAR_NAME" />
+            <select v-model="ef.sourceType" class="ai-up-input">
+              <option value="secret">Secret</option>
+              <option value="configmap">ConfigMap</option>
+            </select>
+            <input v-model="ef.sourceName" class="ai-up-input" placeholder="secret-name" />
+            <input v-model="ef.sourceKey" class="ai-up-input" placeholder="key" />
+            <button type="button" class="ai-up-btn ai-up-btn--ghost" @click="removeEnvFrom(idx)">Remove</button>
+          </div>
+          <button type="button" class="ai-up-btn ai-up-btn--ghost" @click="addEnvFrom">+ Add reference</button>
+        </div>
       </details>
 
-      <label class="ai-up-field">
-        <span>Access control (RouteAssignment names)</span>
-        <small class="ai-up-muted">One assignment name per line. Leave empty for no per-agent ACL.</small>
-        <textarea v-model="aclText" class="ai-up-textarea" rows="2" placeholder="weather-bot-admins" />
-      </label>
+      <div class="ai-up-fieldset">
+        <div class="ai-up-fieldset__legend">Access control <span class="ai-up-fieldset__optional">(optional)</span></div>
+        <p class="ai-up-muted">Select RouteAssignments to control who can invoke this agent.</p>
+        <AiUpPickerList
+          :items="raPickerItems"
+          :selected="selectedAcl"
+          empty-label="No route assignments found. Create them via the MCP Registry."
+          search-placeholder="Filter assignments..."
+          @update:selected="selectedAcl = $event"
+        />
+      </div>
 
       <div v-if="createError" class="ai-up-banner ai-up-banner--error">{{ createError }}</div>
 
@@ -145,11 +166,14 @@ import AiUpGallery from '../components/AiUpGallery.vue';
 import AiUpCard from '../components/AiUpCard.vue';
 import AiUpPill from '../components/AiUpPill.vue';
 import AiUpModal from '../components/AiUpModal.vue';
-import { agentsApi, Agent, AgentTool, CreateAgentRequest } from '../services/agents';
+import AiUpPickerList from '../components/AiUpPickerList.vue';
+import { agentsApi, Agent, AgentTool, EnvVarSource, CreateAgentRequest } from '../services/agents';
 import { adaptersApi } from '../services/adapters';
 import { vroutesApi } from '../services/vroutes';
+import { routeAssignmentsApi } from '../services/route-assignments';
 
 interface ToolForm { kind: 'adapter' | 'vroute'; name: string; }
+interface EnvFromForm { name: string; sourceType: 'secret' | 'configmap'; sourceName: string; sourceKey: string; }
 
 function parseEnvText(text: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -165,16 +189,9 @@ function parseEnvText(text: string): Record<string, string> {
   return out;
 }
 
-function parseLines(text: string): string[] {
-  return (text || '')
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 export default defineComponent({
   name:       'SmartAgents',
-  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpCard, AiUpPill, AiUpModal },
+  components: { AiUpPage, AiUpToolbar, AiUpGallery, AiUpCard, AiUpPill, AiUpModal, AiUpPickerList },
   setup() {
     const agents      = ref<Agent[]>([]);
     const search      = ref('');
@@ -187,6 +204,8 @@ export default defineComponent({
 
     const adapterOptions = ref<string[]>([]);
     const vrouteOptions  = ref<string[]>([]);
+    const raPickerItems  = ref<{ id: string; label: string; sublabel?: string }[]>([]);
+    const selectedAcl    = ref<string[]>([]);
 
     const form = reactive({
       name:        '',
@@ -194,8 +213,8 @@ export default defineComponent({
       description: '',
       tools:       [] as ToolForm[],
       runtime:     { image: '', port: undefined as number | undefined, replicas: undefined as number | undefined, envText: '' },
+      envFrom:     [] as EnvFromForm[],
     });
-    const aclText = ref('');
 
     const filtered = computed(() => {
       const q = search.value.trim().toLowerCase();
@@ -231,8 +250,6 @@ export default defineComponent({
     }
 
     async function loadOptions() {
-      // Best-effort: populate the tool selectors from the existing adapters
-      // and vroutes. Failures are silent — the user can still type a name.
       try {
         const list = (await adaptersApi.list()) || [];
         adapterOptions.value = list.map((a: any) => a.name).filter(Boolean);
@@ -241,6 +258,14 @@ export default defineComponent({
         const list = (await vroutesApi.list()) || [];
         vrouteOptions.value = list.map((v) => v.name).filter(Boolean);
       } catch { vrouteOptions.value = []; }
+      try {
+        const list = (await routeAssignmentsApi.list()) || [];
+        raPickerItems.value = list.map((ra) => ({
+          id:       ra.id,
+          label:    ra.id,
+          sublabel: `${ ra.permissions || 'read' } · server: ${ ra.serverId || '—' }`,
+        }));
+      } catch { raPickerItems.value = []; }
     }
 
     function openCreate() {
@@ -252,7 +277,8 @@ export default defineComponent({
       form.runtime.port     = undefined;
       form.runtime.replicas = undefined;
       form.runtime.envText  = '';
-      aclText.value    = '';
+      form.envFrom     = [];
+      selectedAcl.value = [];
       createError.value = null;
       creating.value   = true;
       loadOptions();
@@ -268,6 +294,14 @@ export default defineComponent({
 
     function removeTool(idx: number) {
       form.tools.splice(idx, 1);
+    }
+
+    function addEnvFrom() {
+      form.envFrom.push({ name: '', sourceType: 'secret', sourceName: '', sourceKey: '' });
+    }
+
+    function removeEnvFrom(idx: number) {
+      form.envFrom.splice(idx, 1);
     }
 
     async function submitCreate() {
@@ -286,20 +320,33 @@ export default defineComponent({
           protocol:    form.protocol.trim(),
           description: form.description.trim() || undefined,
           tools,
-          acl:         parseLines(aclText.value),
+          acl:         selectedAcl.value,
         };
 
         const env = parseEnvText(form.runtime.envText);
+        const envFrom: EnvVarSource[] = form.envFrom
+          .filter((ef) => ef.name.trim() && ef.sourceName.trim() && ef.sourceKey.trim())
+          .map((ef) => {
+            const src: EnvVarSource = { name: ef.name.trim() };
+            if (ef.sourceType === 'secret') {
+              src.secretKeyRef = { name: ef.sourceName.trim(), key: ef.sourceKey.trim() };
+            } else {
+              src.configMapKeyRef = { name: ef.sourceName.trim(), key: ef.sourceKey.trim() };
+            }
+            return src;
+          });
         const hasRuntime = !!(form.runtime.image
           || form.runtime.port
           || form.runtime.replicas !== undefined
-          || Object.keys(env).length);
+          || Object.keys(env).length
+          || envFrom.length);
         if (hasRuntime) {
           req.runtime = {
             image:    form.runtime.image || undefined,
             port:     form.runtime.port,
             replicas: form.runtime.replicas,
             env:      Object.keys(env).length ? env : undefined,
+            envFrom:  envFrom.length ? envFrom : undefined,
           };
         }
 
@@ -331,9 +378,11 @@ export default defineComponent({
     return {
       agents, search, loading, error, deleting,
       creating, submitting, createError,
-      form, aclText, adapterOptions, vrouteOptions,
+      form, selectedAcl, raPickerItems, adapterOptions, vrouteOptions,
       filtered, canCreate,
-      statusTone, refresh, openCreate, closeCreate, addTool, removeTool, submitCreate, confirmDelete,
+      statusTone, refresh, openCreate, closeCreate,
+      addTool, removeTool, addEnvFrom, removeEnvFrom,
+      submitCreate, confirmDelete,
     };
   },
 });
@@ -392,9 +441,20 @@ export default defineComponent({
   color:        var(--body-text, #333);
   margin-bottom: 2px;
 }
+.ai-up-fieldset__optional {
+  font-weight: 400;
+  color:       var(--muted, #888);
+  margin-left: 4px;
+}
 .tool-row {
   display: grid;
   grid-template-columns: 130px 1fr auto;
+  gap:     8px;
+  align-items: center;
+}
+.envfrom-row {
+  display: grid;
+  grid-template-columns: 1fr 110px 1fr 1fr auto;
   gap:     8px;
   align-items: center;
 }

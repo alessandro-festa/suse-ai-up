@@ -46,4 +46,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 EXPOSE 8911 3911
 
-CMD ["./suse-ai-up"]
+ENTRYPOINT ["./suse-ai-up"]
+CMD ["all"]

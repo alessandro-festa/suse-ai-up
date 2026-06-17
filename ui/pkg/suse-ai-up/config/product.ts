@@ -14,6 +14,8 @@ export const PAGE_TYPES = {
   MCP_REGISTRY: 'mcp-registry',
   VIRTUAL_MCP:  'virtual-mcp',
   SMART_AGENTS: 'smart-agents',
+  DISCOVERY:    'discovery',
+  PLUGINS:      'plugins',
   SETTINGS:     'settings-up',
   // Group label that holds the page entries in the side menu.
   GROUP:        'Universal Proxy',
@@ -35,6 +37,8 @@ export const ROUTE_NAMES = {
   MCP_REGISTRY: `${PRODUCT}-c-cluster-${PAGE_TYPES.MCP_REGISTRY}`,
   VIRTUAL_MCP:  `${PRODUCT}-c-cluster-${PAGE_TYPES.VIRTUAL_MCP}`,
   SMART_AGENTS: `${PRODUCT}-c-cluster-${PAGE_TYPES.SMART_AGENTS}`,
+  DISCOVERY:    `${PRODUCT}-c-cluster-${PAGE_TYPES.DISCOVERY}`,
+  PLUGINS:      `${PRODUCT}-c-cluster-${PAGE_TYPES.PLUGINS}`,
   SETTINGS:     `${PRODUCT}-c-cluster-${PAGE_TYPES.SETTINGS}`,
 } as const;
 
@@ -54,5 +58,7 @@ export const PAGES: PageDef[] = [
   { name: PAGE_TYPES.MCP_REGISTRY, label: 'MCP Registry', route: ROUTE_NAMES.MCP_REGISTRY, weight: 400 },
   { name: PAGE_TYPES.VIRTUAL_MCP,  label: 'Virtual MCP',  route: ROUTE_NAMES.VIRTUAL_MCP,  weight: 300 },
   { name: PAGE_TYPES.SMART_AGENTS, label: 'Smart Agents', route: ROUTE_NAMES.SMART_AGENTS, weight: 200 },
+  { name: PAGE_TYPES.DISCOVERY,    label: 'Discovery',    route: ROUTE_NAMES.DISCOVERY,    weight: 150 },
+  { name: PAGE_TYPES.PLUGINS,      label: 'Plugins',      route: ROUTE_NAMES.PLUGINS,      weight: 120 },
   { name: PAGE_TYPES.SETTINGS,     label: 'Settings',     route: ROUTE_NAMES.SETTINGS,     weight: 100 },
 ];

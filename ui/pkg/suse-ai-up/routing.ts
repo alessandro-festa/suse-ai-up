@@ -38,6 +38,18 @@ export default [
     meta:      { product: PRODUCT, category: PAGE_TYPES.SMART_AGENTS },
   },
   {
+    name:      ROUTE_NAMES.DISCOVERY,
+    path:      `/c/:cluster/${PRODUCT}/${PAGE_TYPES.DISCOVERY}`,
+    component: () => import('./pages/Discovery.vue'),
+    meta:      { product: PRODUCT, category: PAGE_TYPES.DISCOVERY },
+  },
+  {
+    name:      ROUTE_NAMES.PLUGINS,
+    path:      `/c/:cluster/${PRODUCT}/${PAGE_TYPES.PLUGINS}`,
+    component: () => import('./pages/Plugins.vue'),
+    meta:      { product: PRODUCT, category: PAGE_TYPES.PLUGINS },
+  },
+  {
     name:      ROUTE_NAMES.SETTINGS,
     path:      `/c/:cluster/${PRODUCT}/${PAGE_TYPES.SETTINGS}`,
     component: () => import('./pages/Settings.vue'),

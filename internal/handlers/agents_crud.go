@@ -55,13 +55,27 @@ type AgentToolDTO struct {
 	VirtualMCPRouteName string `json:"virtualMCPRouteName,omitempty"`
 }
 
-// AgentRuntimeDTO mirrors the writable subset of AgentRuntime. Env is
-// flattened to plain key=value pairs in this MVP; secret-ref env vars
-// must be configured via kubectl (see plan §Out of scope).
+// KeySelectorDTO is the HTTP-facing shape for a Kubernetes key selector
+// (either SecretKeySelector or ConfigMapKeySelector).
+type KeySelectorDTO struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
+}
+
+// EnvVarSourceDTO represents an env var backed by a Secret or ConfigMap.
+type EnvVarSourceDTO struct {
+	Name            string          `json:"name"`
+	SecretKeyRef    *KeySelectorDTO `json:"secretKeyRef,omitempty"`
+	ConfigMapKeyRef *KeySelectorDTO `json:"configMapKeyRef,omitempty"`
+}
+
+// AgentRuntimeDTO mirrors the writable subset of AgentRuntime. Plain
+// key=value env vars use Env; secret/configmap refs use EnvFrom.
 type AgentRuntimeDTO struct {
 	Image    string            `json:"image,omitempty"`
 	Args     []string          `json:"args,omitempty"`
 	Env      map[string]string `json:"env,omitempty"`
+	EnvFrom  []EnvVarSourceDTO `json:"envFrom,omitempty"`
 	Port     int32             `json:"port,omitempty"`
 	Replicas *int32            `json:"replicas,omitempty"`
 }
@@ -505,10 +519,10 @@ func toolCRToDTOs(in []mcpv1alpha1.AgentToolRef) []AgentToolDTO {
 	return out
 }
 
-// runtimeDTOToCR / runtimeCRToDTO translate between the flat HTTP DTO
-// and the CR runtime shape. Env is plain string→string in the DTO;
-// corev1.EnvVar's ValueFrom (secret/configmap refs) is out of scope for
-// this MVP and must be configured via kubectl.
+// runtimeDTOToCR / runtimeCRToDTO translate between the HTTP DTO and
+// the CR runtime shape. Plain key=value env vars use Env (map); env
+// vars backed by Secret/ConfigMap refs use EnvFrom (array of
+// EnvVarSourceDTO).
 func runtimeDTOToCR(in *AgentRuntimeDTO) *mcpv1alpha1.AgentRuntime {
 	if in == nil {
 		return nil
@@ -519,12 +533,31 @@ func runtimeDTOToCR(in *AgentRuntimeDTO) *mcpv1alpha1.AgentRuntime {
 		Port:     in.Port,
 		Replicas: in.Replicas,
 	}
-	if len(in.Env) > 0 {
-		out.Env = make([]corev1.EnvVar, 0, len(in.Env))
+	total := len(in.Env) + len(in.EnvFrom)
+	if total > 0 {
+		out.Env = make([]corev1.EnvVar, 0, total)
 		for k, v := range in.Env {
 			out.Env = append(out.Env, corev1.EnvVar{Name: k, Value: v})
 		}
-		// Stable ordering so round-trips through DTO→CR→DTO don't reshuffle.
+		for _, ef := range in.EnvFrom {
+			ev := corev1.EnvVar{Name: ef.Name}
+			if ef.SecretKeyRef != nil {
+				ev.ValueFrom = &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: ef.SecretKeyRef.Name},
+						Key:                  ef.SecretKeyRef.Key,
+					},
+				}
+			} else if ef.ConfigMapKeyRef != nil {
+				ev.ValueFrom = &corev1.EnvVarSource{
+					ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: ef.ConfigMapKeyRef.Name},
+						Key:                  ef.ConfigMapKeyRef.Key,
+					},
+				}
+			}
+			out.Env = append(out.Env, ev)
+		}
 		sort.Slice(out.Env, func(i, j int) bool { return out.Env[i].Name < out.Env[j].Name })
 	}
 	return out
@@ -540,14 +573,24 @@ func runtimeCRToDTO(in *mcpv1alpha1.AgentRuntime) *AgentRuntimeDTO {
 		Port:     in.Port,
 		Replicas: in.Replicas,
 	}
-	if len(in.Env) > 0 {
-		out.Env = make(map[string]string, len(in.Env))
-		for _, e := range in.Env {
-			// Drop ValueFrom-only entries from the DTO projection — the
-			// flat map shape can't express them. UIs that need them
-			// should fall back to kubectl get agent -o yaml.
-			if e.ValueFrom != nil && e.Value == "" {
-				continue
+	for _, e := range in.Env {
+		if e.ValueFrom != nil {
+			dto := EnvVarSourceDTO{Name: e.Name}
+			if e.ValueFrom.SecretKeyRef != nil {
+				dto.SecretKeyRef = &KeySelectorDTO{
+					Name: e.ValueFrom.SecretKeyRef.Name,
+					Key:  e.ValueFrom.SecretKeyRef.Key,
+				}
+			} else if e.ValueFrom.ConfigMapKeyRef != nil {
+				dto.ConfigMapKeyRef = &KeySelectorDTO{
+					Name: e.ValueFrom.ConfigMapKeyRef.Name,
+					Key:  e.ValueFrom.ConfigMapKeyRef.Key,
+				}
+			}
+			out.EnvFrom = append(out.EnvFrom, dto)
+		} else {
+			if out.Env == nil {
+				out.Env = make(map[string]string)
 			}
 			out.Env[e.Name] = e.Value
 		}

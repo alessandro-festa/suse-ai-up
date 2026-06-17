@@ -269,5 +269,8 @@ func Register(r *gin.Engine, svc *bootstrap.AppServices) {
 		registry.GET("/:id/routes", ginToHTTPHandler(svc.RouteAssignmentHandler.ListRouteAssignments))
 		registry.PUT("/:id/routes/:assignmentId", ginToHTTPHandler(svc.RouteAssignmentHandler.UpdateRouteAssignment))
 		registry.DELETE("/:id/routes/:assignmentId", ginToHTTPHandler(svc.RouteAssignmentHandler.DeleteRouteAssignment))
+
+		// Global route assignments (cross-server list for UI pickers)
+		v1.GET("/route-assignments", ginToHTTPHandler(svc.RouteAssignmentHandler.ListAllRouteAssignments))
 	}
 }
